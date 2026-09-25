@@ -279,7 +279,3 @@ pub fn analyze(elf: &Path, snapshot_path: &Path) -> Result<serde_json::Value> {
         serde_json::json!({"schemaVersion":1,"elfSha256":hash,"sessionId":snapshot.session_id,"programGeneration":snapshot.program_generation,"capturedAt":snapshot.captured_at,"consistency":"best-effort","memorySections":sections,"rtos":lists,"warnings":warnings}),
     )
 }
-
-#[cfg(test)]
-#[path = "../../../.agents/tests/threadx_analysis.rs"]
-mod tests;

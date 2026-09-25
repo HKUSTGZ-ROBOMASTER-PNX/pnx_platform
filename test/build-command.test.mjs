@@ -25,7 +25,7 @@ test('configure and build API executes the selected CMake preset', { timeout: 30
   mkdirSync(path.join(fixture, 'configs', 'boards'), { recursive: true });
   const stale = path.join(fixture, 'build', 'h723-debug', 'CMakeCache.txt');
   mkdirSync(path.dirname(stale), { recursive: true });
-  writeFileSync(stale, 'CMAKE_HOME_DIRECTORY:INTERNAL=D:/Workspace/robomaster/pnx_template\n');
+  writeFileSync(stale, 'CMAKE_HOME_DIRECTORY:INTERNAL=D:/old-workspace/project\n');
   const child = spawn(process.execPath, ['src/server.mjs'], {
     cwd: root, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, PNX_WORKSPACE_ROOT: fixture, PNX_CACHE_ROOT: path.join(fixture, 'cache') },
@@ -55,7 +55,7 @@ test('configure and build API executes the selected CMake preset', { timeout: 30
     assert.equal(built.buildDir, configured.buildDir);
     assert.ok(built.buildDir.startsWith(path.join(fixture, 'build', 'pnx-platform') + path.sep));
     assert.ok(existsSync(path.join(built.buildDir, 'firmware-built')));
-    assert.equal(readFileSync(stale, 'utf8'), 'CMAKE_HOME_DIRECTORY:INTERNAL=D:/Workspace/robomaster/pnx_template\n');
+    assert.equal(readFileSync(stale, 'utf8'), 'CMAKE_HOME_DIRECTORY:INTERNAL=D:/old-workspace/project\n');
 
     const generic = path.join(root, '.cache', `generic-workspace-fixture-${process.pid}`);
     mkdirSync(generic, { recursive: true });
