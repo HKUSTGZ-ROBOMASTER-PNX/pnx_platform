@@ -5,7 +5,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { DapSession, listProbes } from './dap.mjs';
+import { DapSession, listProbes, resolveProbeSelection } from './dap.mjs';
 import { globalScalars, globalTree, checkedWriteValue } from './global-variables.mjs';
 import { SubscriptionBanks } from './subscription-banks.mjs';
 import { Workspace } from './workspace.mjs';
@@ -18,6 +18,7 @@ import { bindingKinds, bindingValue, boardDefaults, fields, get, motorFields, mo
 const token = randomBytes(24).toString('hex');
 const clients = new Set();
 let session;
+let sessionTransition = Promise.resolve();
 let catalog = [];
 let selected = [];
 let selectedSet = new Set();
@@ -302,6 +303,40 @@ async function stopSession() {
   sendEvent('catalog', { variables: [], tree: [] });
   status('Disconnected');
 }
+function serializeSession(work) {
+  const result = sessionTransition.then(work, work);
+  sessionTransition = result.catch(() => {});
+  return result;
+}
+async function connectSession(input) {
+  await stopSession();
+  const mock = input.mock === true;
+  if (!mock && !projectRoot) throw new Error('Debug and flash require an open PnX project folder');
+  const board = mock ? 'h723_mc02' : presetBoard(input.preset);
+  const elf = mock ? undefined : path.join(buildDirectory(input.preset), 'pnx_embedded.elf');
+  if (!mock && !existsSync(elf)) throw new Error(`ELF not found: ${elf}. Build the selected preset first.`);
+  const probe = mock ? null : resolveProbeSelection(await listProbes(), input.probe, input.allowFlash === true || input.allowDebug === true);
+  if (probe?.changed) status(`Selected probe was disconnected; using ${probe.selector}`);
+  const next = new DapSession(
+    batch => { if (session === next) onBatch(batch); },
+    message => { if (session === next) status(message); },
+    (event, data) => { if (session === next) sendEvent('debug', { event, ...data }); },
+  );
+  session = next;
+  try {
+    catalog = await next.start({ mock, chip: BOARDS[board].chip, elf, probe: probe?.selector, speedKHz: Number(input.speedKHz) || 4000,
+      rate: Number(input.rate) || 1000, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true });
+  } catch (err) { await stopSession(); throw err; }
+  next.meta = { board, preset: input.preset, mock, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true || input.allowFlash === true,
+    elfPath: elf,
+    elfHash: elf ? hashFile(elf) : undefined,
+    paramsHash: mock ? undefined : currentConfig(board).params.hash,
+    robotHash: mock ? undefined : currentConfig(board).robot.hash };
+  const variables = flatten(catalog);
+  const tree = globalTree(catalog);
+  sendEvent('catalog', { variables, tree });
+  return { variables, tree, board, elf, probe: probe?.selector };
+}
 async function route(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname === '/' && req.method === 'GET') {
@@ -366,12 +401,15 @@ async function route(req, res) {
   }
   const input = await body(req);
   if (url.pathname === '/api/workspace/open' && req.method === 'POST') {
-    if (busy) throw new Error('Wait for the current command to finish before switching folders');
-    const previousRoot = workspace.root;
-    const result = workspace.open(input.folder);
-    const nextProject = result.isPnx ? result.root : null;
-    if (result.root !== previousRoot || nextProject !== projectRoot) { await stopSession(); projectRoot = nextProject; editorContexts.clear(); }
-    json(res, 200, { ...result, projectRoot }); return;
+    const result = await serializeSession(async () => {
+      if (busy) throw new Error('Wait for the current command to finish before switching folders');
+      const previousRoot = workspace.root;
+      const opened = workspace.open(input.folder);
+      const nextProject = opened.isPnx ? opened.root : null;
+      if (opened.root !== previousRoot || nextProject !== projectRoot) { await stopSession(); projectRoot = nextProject; editorContexts.clear(); }
+      return { ...opened, projectRoot };
+    });
+    json(res, 200, result); return;
   }
   if (url.pathname === '/api/workspace/file' && req.method === 'POST') { json(res, 200, workspace.save(input.path, input.text, input.expectedHash)); return; }
   if (url.pathname === '/api/workspace/definitions' && req.method === 'POST') {
@@ -430,31 +468,7 @@ async function route(req, res) {
     json(res, 200, { ok: true, buildDir, elf: projectRoot ? path.join(buildDir, 'pnx_embedded.elf') : undefined }); return;
   }
   if (url.pathname === '/api/connect' && req.method === 'POST') {
-    await stopSession();
-    const mock = input.mock === true;
-    if (!mock && !projectRoot) throw new Error('Debug and flash require an open PnX project folder');
-    const board = mock ? 'h723_mc02' : presetBoard(input.preset);
-    const elf = mock ? undefined : path.join(buildDirectory(input.preset), 'pnx_embedded.elf');
-    if (!mock && !existsSync(elf)) throw new Error(`ELF not found: ${elf}. Build the selected preset first.`);
-    const next = new DapSession(
-      batch => { if (session === next) onBatch(batch); },
-      message => { if (session === next) status(message); },
-      (event, data) => { if (session === next) sendEvent('debug', { event, ...data }); },
-    );
-    session = next;
-    try {
-      catalog = await next.start({ mock, chip: BOARDS[board].chip, elf, probe: input.probe, speedKHz: Number(input.speedKHz) || 4000,
-      rate: Number(input.rate) || 1000, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true });
-    } catch (err) { await stopSession(); throw err; }
-    next.meta = { board, preset: input.preset, mock, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true || input.allowFlash === true,
-      elfPath: elf,
-      elfHash: elf ? hashFile(elf) : undefined,
-      paramsHash: mock ? undefined : currentConfig(board).params.hash,
-      robotHash: mock ? undefined : currentConfig(board).robot.hash };
-    const variables = flatten(catalog);
-    const tree = globalTree(catalog);
-    sendEvent('catalog', { variables, tree });
-    json(res, 200, { variables, tree, board, elf }); return;
+    json(res, 200, await serializeSession(() => connectSession(input))); return;
   }
   if (url.pathname === '/api/subscribe' && req.method === 'POST') {
     if (!session) throw new Error('Connect first');
@@ -519,7 +533,7 @@ async function route(req, res) {
     await session.flash(elf);
     json(res, 200, { ok: true }); return;
   }
-  if (url.pathname === '/api/disconnect' && req.method === 'POST') { await stopSession(); json(res, 200, { ok: true }); return; }
+  if (url.pathname === '/api/disconnect' && req.method === 'POST') { await serializeSession(stopSession); json(res, 200, { ok: true }); return; }
   if (url.pathname === '/api/serial-test' && req.method === 'POST') {
     if (!/^COM\d{1,3}$/i.test(input.port || '')) throw new Error('Enter a COM port such as COM7');
     const baud = Number(input.baud);

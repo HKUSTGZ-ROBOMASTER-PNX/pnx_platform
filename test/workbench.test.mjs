@@ -75,6 +75,11 @@ test('standalone workbench loads board resources and streams mock samples', { ti
     assert.match(stream, /event: samples/);
     const reattached = await post('/api/connect', { mock: true, preset: 'h723-debug', rate: 1000 });
     assert.ok(reattached.variables.some(value => value.id === 'mock.ramp'));
+    const switched = await Promise.all([
+      post('/api/connect', { mock: true, preset: 'h723-debug', rate: 1000 }),
+      post('/api/connect', { mock: true, preset: 'h723-debug', rate: 1000 }),
+    ]);
+    assert.ok(switched.every(value => value.variables.some(variable => variable.id === 'mock.ramp')));
     await post('/api/subscribe', { ids: ['mock.ramp'], rate: 1000 });
     const active = await get('/api/catalog');
     assert.equal(active.connected, true);

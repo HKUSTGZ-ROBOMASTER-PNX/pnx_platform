@@ -36,7 +36,7 @@ async function scanProbes() {
     const current = $('probe').value.trim() || 'auto';
     list.value = current;
     if (list.value !== current) list.selectedIndex = -1;
-    $('probeScanStatus').textContent = probes.length ? `发现 ${probes.length} 个探针；请选择 DAPLink / CMSIS-DAP 后连接调试。` : '未发现探针。请检查 USB 连接与 CMSIS-DAP 固件。';
+    $('probeScanStatus').textContent = probes.length ? `发现 ${probes.length} 个探针；请选择 ST-Link 或 DAPLink / CMSIS-DAP 后连接。` : '未发现探针。请检查 USB 连接与调试探针驱动。';
   } catch (error) { $('probeScanStatus').textContent = `扫描失败：${error.message}`; throw error; }
   finally { button.disabled = false; }
 }
@@ -869,6 +869,11 @@ async function connect(mock, allowFlash, allowDebug = false, switchView = true) 
   let result;
   try { result = await api('/api/connect', { mock, allowFlash, allowDebug, preset: state.preset, probe: $('probe').value.trim(), speedKHz: Number($('speed').value), rate }); }
   catch (error) { resetConnectionUI(); throw error; }
+  if (result.probe && result.probe !== $('probe').value.trim()) {
+    $('probe').value = result.probe;
+    $('probeList').value = result.probe;
+    log(`探针已切换：${result.probe}`);
+  }
   clearTimeout(liveTimer); liveTimer = null;
   setVariableCatalog(result.variables, result.tree); state.connected = true; state.flashAccess = allowFlash && !mock; state.debugAccess = (allowDebug || allowFlash) && !mock; state.debugPaused = false; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
   $('openVariablePicker').disabled = false; $('subscribe').disabled = false; $('disconnect').disabled = false; $('flash').disabled = !state.config.params;

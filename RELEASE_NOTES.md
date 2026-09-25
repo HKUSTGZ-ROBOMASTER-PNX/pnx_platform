@@ -1,9 +1,9 @@
-# PnX Platform v0.2.0
+# PnX Platform v0.2.1
 
-本版将探针连接、调试和高频采样所用的 Rust 后端合并到平台仓库。Windows 安装包由 `native/` 源码编译并包含 `pnx-dap.exe`，启动和打包均不再查找相邻的 `cortex-kit` 或 `pnx_template` 仓库。应用启动后可直接打开任意文件夹；PnX 图形配置读取所选项目的 `configs/boards/<board>/params.json`、`robot.json`，使用平台内置的 Schema 和 H723/F407 板卡资源描述，可读取项目内的 `boards/<board>/board.json`。配置页不再执行项目中的导出脚本。
+修复 DAPLink 切换到 ST-Link 后可能无法采样的问题。切换连接时，工作台现在会等待旧 Rust 适配器进程退出，并串行处理连接、断开与切换项目的请求。旧探针已拔掉且只剩一只 ST-Link 时，只读连接会自动采用当前 ST-Link；调试和烧录仍需明确选择新探针，避免错误设备操作。
 
-采样协议与核心读数逻辑保持原实现。连接中的 ST-Link 只读对照：相同 ELF、同一组 256 路 RAM 变量、1000 S/s 请求、8 秒测量，原后端为 49.0 S/s，新后端为 49.1 S/s；两者均收齐 256 路、丢帧 0。模拟采样 UI 测试的总体读取约 1020 S/s、丢帧 0。实际速率仍受探针、地址与板端负载影响。
+本版仍使用平台仓库内的 Rust 后端，不依赖相邻 `cortex-kit` 或 `pnx_template` 源码仓库。Windows 安装包包含 `pnx-dap.exe`。
 
-验证：19 项 Node 测试通过；Windows x64 Electron 独立包通过配置、编辑、构建按钮、调试按钮、曲线、记录与模拟采样 UI 测试。ST-Link 未执行烧录或电机控制。固件编译仍需 CMake、Ninja 和 Arm GNU Toolchain；从源码打包还需 Rust 工具链。
+验证：21 项 Node 测试通过；模拟旧会话采样后切换到真实 ST-Link，自动识别唯一在线探针并收到 57 路变量样本。当前机器没有 DAPLink，尚不能直接复现 DAPLink 固件层面的切换问题。测试未执行烧录或电机控制。
 
-安装包 SHA-256：`E850AC239DB79CC291851F3920DB1E158B196032AF7585B0CDA70E62BB994DAE`
+安装包 SHA-256：`3A89032224E24451B47575F1C59F3D431E0A11452DE116AEBBD173CBAF136276`

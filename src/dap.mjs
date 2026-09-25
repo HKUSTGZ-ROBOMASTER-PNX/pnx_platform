@@ -13,6 +13,15 @@ export function normalizeProbes(value) {
   });
 }
 
+export function resolveProbeSelection(probes, requested, allowTargetChanges = false) {
+  if (!probes.length) throw new Error('No ST-Link or CMSIS-DAP probe found');
+  const selector = String(requested || 'auto').trim() || 'auto';
+  if (selector !== 'auto' && probes.some(probe => probe.selector === selector)) return { selector, changed: false };
+  if (probes.length > 1) throw new Error('Multiple probes are connected; scan and select the probe to use');
+  if (selector !== 'auto' && allowTargetChanges) throw new Error('Selected probe is no longer connected; scan and select the new probe before debug or flash');
+  return { selector: probes[0].selector, changed: selector !== 'auto' };
+}
+
 export function listProbes() {
   return new Promise((resolve, reject) => {
     const child = spawn(BACKEND, ['--list-probes'], { cwd: ROOT, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -50,6 +59,7 @@ export class DapSession {
 
   async start(options) {
     this.child = spawn(this.backend, options.mock ? ['--mock'] : [], { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    this.exited = new Promise(resolve => this.child.once('close', resolve));
     this.child.stdout.on('data', data => this.acceptDap(data));
     this.child.stderr.on('data', data => this.onStatus(String(data).trim()));
     this.child.on('error', error => this.fail(error));
@@ -172,12 +182,25 @@ export class DapSession {
   }
 
   async stop() {
-    if (this.closed) return;
-    try { await this.request('disconnect', {}, 3000); } catch { /* Adapter may already be gone. */ }
-    this.closed = true;
-    this.socket?.destroy();
-    this.child?.kill();
-    this.fail(new Error('Session stopped'));
+    if (this.stopping) return this.stopping;
+    this.stopping = (async () => {
+      if (!this.closed) {
+        try { await this.request('disconnect', {}, 3000); } catch { /* Adapter may already be gone. */ }
+      }
+      this.socket?.destroy();
+      if (this.child && this.child.exitCode === null && this.child.signalCode === null) {
+        let timer;
+        try {
+          await Promise.race([this.exited, new Promise(resolve => { timer = setTimeout(resolve, 1500); })]);
+        } finally { clearTimeout(timer); }
+        if (this.child.exitCode === null && this.child.signalCode === null) {
+          this.child.kill();
+          await this.exited;
+        }
+      }
+      this.fail(new Error('Session stopped'));
+    })();
+    return this.stopping;
   }
 
   fail(error) {
