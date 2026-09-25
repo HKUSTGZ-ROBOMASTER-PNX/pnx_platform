@@ -2,4 +2,6 @@
 dist/
 node_modules/
 build/
+native/target/
+bin/
 *.log

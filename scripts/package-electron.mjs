@@ -1,9 +1,14 @@
 import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const backend = process.platform === 'win32' ? 'pnx-dap.exe' : 'pnx-dap';
+execFileSync('cargo', ['build', '--release', '--locked', '--manifest-path', path.join(source, 'native', 'Cargo.toml'), '-p', 'pnx-dap'], { stdio: 'inherit' });
+const binary = path.join(source, 'native', 'target', 'release', backend);
+if (!existsSync(binary)) throw new Error(`Native backend build did not produce ${binary}`);
 const tempRoot = realpathSync(os.tmpdir());
 const stage = mkdtempSync(path.join(tempRoot, 'pnx-electron-stage-'));
 try {
@@ -14,12 +19,8 @@ try {
   }, null, 2));
   for (const name of ['src', 'web', 'electron', 'config']) cpSync(path.join(source, name), path.join(stage, name), { recursive: true });
   cpSync(path.join(source, 'README.md'), path.join(stage, 'README.md'));
-  const backend = process.platform === 'win32' ? 'cortex-kit-dap.exe' : 'cortex-kit-dap';
-  const binary = path.resolve(source, '..', 'cortex-kit', 'extension', 'bin', backend);
-  if (existsSync(binary)) {
-    mkdirSync(path.join(stage, 'bin'));
-    cpSync(binary, path.join(stage, 'bin', backend));
-  } else process.stderr.write(`Cortex Kit backend not found for ${process.platform}: ${binary}\n`);
+  mkdirSync(path.join(stage, 'bin'));
+  cpSync(binary, path.join(stage, 'bin', backend));
 
   const { default: packager } = await import('@electron/packager');
   const output = await packager({

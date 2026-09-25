@@ -1,6 +1,8 @@
 param([string]$ElectronVersion = '38.8.6', [string]$OutputName = 'PnX-Platform-electron-win32-x64')
 $ErrorActionPreference = 'Stop'
 $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+& (Join-Path $PSScriptRoot 'build-native-win.ps1')
+if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Native backend build failed' }
 $zip = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'electron\Cache') -Filter "electron-v$ElectronVersion-win32-x64.zip" -File -Recurse | Select-Object -First 1
 if (-not $zip) { throw "Electron $ElectronVersion Windows x64 runtime is missing from the local cache." }
 $distDir = [System.IO.Path]::GetFullPath((Join-Path $sourceRoot 'dist'))
@@ -18,12 +20,9 @@ $appDir = Join-Path $outDir 'resources\app'
 New-Item -ItemType Directory -Path $appDir -Force | Out-Null
 foreach ($name in @('package.json', 'README.md')) { Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $appDir }
 foreach ($name in @('src', 'web', 'electron', 'config')) { Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $appDir -Recurse }
-$backend = Join-Path $sourceRoot '..\cortex-kit\extension\bin\cortex-kit-dap.exe'
-if (Test-Path -LiteralPath $backend) {
-  $binDir = Join-Path $appDir 'bin'
-  New-Item -ItemType Directory -Path $binDir -Force | Out-Null
-  Copy-Item -LiteralPath $backend -Destination (Join-Path $binDir 'cortex-kit-dap.exe')
-}
+$binDir = Join-Path $appDir 'bin'
+New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'bin\pnx-dap.exe') -Destination (Join-Path $binDir 'pnx-dap.exe')
 Rename-Item -LiteralPath (Join-Path $outDir 'electron.exe') -NewName 'PnX-Platform.exe'
 $localeDir = [System.IO.Path]::GetFullPath((Join-Path $outDir 'locales'))
 if (-not $localeDir.StartsWith($outDir + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid locale directory.' }

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { existsSync } from 'node:fs';
-import { BACKEND, CORTEX } from './paths.mjs';
+import { BACKEND, ROOT } from './paths.mjs';
 
 export function normalizeProbes(value) {
   if (!Array.isArray(value)) throw new Error('Invalid probe list');
@@ -15,7 +15,7 @@ export function normalizeProbes(value) {
 
 export function listProbes() {
   return new Promise((resolve, reject) => {
-    const child = spawn(BACKEND, ['--list-probes'], { cwd: existsSync(CORTEX) ? CORTEX : process.cwd(), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(BACKEND, ['--list-probes'], { cwd: ROOT, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '', error = '', settled = false;
     const finish = (failure, value) => { if (settled) return; settled = true; clearTimeout(timer); failure ? reject(failure) : resolve(value); };
     const timer = setTimeout(() => { child.kill(); finish(new Error('Probe scan timed out')); }, 10000);
@@ -31,10 +31,13 @@ export function listProbes() {
 }
 
 export class DapSession {
-  constructor(onBatch, onStatus, onDebugEvent = () => {}) {
+  constructor(onBatch, onStatus, onDebugEvent = () => {}, adapter = {}) {
     this.onBatch = onBatch;
     this.onStatus = onStatus;
     this.onDebugEvent = onDebugEvent;
+    this.backend = adapter.backend || BACKEND;
+    this.prefix = adapter.prefix || 'pnx';
+    this.adapterId = adapter.adapterId || 'pnx';
     this.pending = new Map();
     this.waiters = [];
     this.events = [];
@@ -46,12 +49,12 @@ export class DapSession {
   }
 
   async start(options) {
-    this.child = spawn(BACKEND, options.mock ? ['--mock'] : [], { cwd: existsSync(CORTEX) ? CORTEX : process.cwd(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    this.child = spawn(this.backend, options.mock ? ['--mock'] : [], { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.child.stdout.on('data', data => this.acceptDap(data));
     this.child.stderr.on('data', data => this.onStatus(String(data).trim()));
     this.child.on('error', error => this.fail(error));
     this.child.on('exit', (code, signal) => this.fail(new Error(`Adapter exited: ${signal ?? code}`)));
-    await this.request('initialize', { adapterID: 'cortex-kit' });
+    await this.request('initialize', { adapterID: this.adapterId });
     await this.request('attach', {
       chip: options.mock ? 'Cortex-M Mock' : options.chip,
       mockProbe: !!options.mock,
@@ -62,8 +65,8 @@ export class DapSession {
       flashing: { enabled: false, verify: false, resetAfter: false },
       acquisition: { requestedSamplesPerSecond: options.rate, historySeconds: 30 },
     }, 30000);
-    const ready = await this.event('cortexKit.dataChannelReady');
-    const catalog = await this.request('cortexKit/getCatalog');
+    const ready = await this.event(`${this.prefix}.dataChannelReady`);
+    const catalog = await this.request(`${this.prefix}/getCatalog`);
     await this.openSamples(ready.body);
     await this.request('configurationDone');
     this.onStatus('Attached; sample stream connected');
@@ -142,8 +145,8 @@ export class DapSession {
 
   async subscribe(ids, rate) {
     this.ids = [...new Set(ids)];
-    if (this.ids.length > 256) throw new Error('Cortex Kit supports at most 256 simultaneous numeric channels');
-    return this.request('cortexKit/setSubscriptions', { ids: this.ids, requestedSamplesPerSecond: Math.max(1, Math.min(100000, Math.floor(rate))) });
+    if (this.ids.length > 256) throw new Error('The probe backend supports at most 256 simultaneous numeric channels');
+    return this.request(`${this.prefix}/setSubscriptions`, { ids: this.ids, requestedSamplesPerSecond: Math.max(1, Math.min(100000, Math.floor(rate))) });
   }
 
   async debug(command) {
@@ -160,12 +163,12 @@ export class DapSession {
   }
 
   async writeValue(id, value) {
-    return this.request('cortexKit/writeValue', { id, value }, 15000);
+    return this.request(`${this.prefix}/writeValue`, { id, value }, 15000);
   }
 
   async flash(elf) {
     if (!existsSync(elf)) throw new Error(`ELF not found: ${elf}`);
-    return this.request('cortexKit/flash', { path: elf, verify: true, resetAfter: true }, 120000);
+    return this.request(`${this.prefix}/flash`, { path: elf, verify: true, resetAfter: true }, 120000);
   }
 
   async stop() {

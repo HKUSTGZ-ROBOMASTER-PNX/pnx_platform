@@ -1,0 +1,18 @@
+[package]
+name = "pnx-dap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+base64 = "0.22"
+pnx-core = { path = "../pnx-core" }
+pnx-probe = { path = "../pnx-probe" }
+crossbeam-channel.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[[bin]]
+name = "pnx-dap"
+path = "src/main.rs"

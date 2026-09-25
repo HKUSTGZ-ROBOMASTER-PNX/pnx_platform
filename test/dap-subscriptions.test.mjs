@@ -9,7 +9,7 @@ test('DAP subscription keeps every requested channel up to the wire limit', asyn
   session.request = async (command, body) => { request = { command, body }; return {}; };
   const ids = Array.from({ length: 256 }, (_, index) => `channel-${index}`);
   await session.subscribe(ids, 5000);
-  assert.equal(request.command, 'cortexKit/setSubscriptions');
+  assert.equal(request.command, 'pnx/setSubscriptions');
   assert.deepEqual(request.body.ids, ids);
   assert.equal(request.body.requestedSamplesPerSecond, 5000);
   await assert.rejects(session.subscribe([...ids, 'channel-256'], 5000), /at most 256/);
@@ -44,7 +44,7 @@ test('flash request verifies the selected artifact and resets after programming'
   session.request = async (command, body) => { request = { command, body }; return {}; };
   const artifact = fileURLToPath(new URL('../package.json', import.meta.url));
   await session.flash(artifact);
-  assert.deepEqual(request, { command: 'cortexKit/flash', body: { path: artifact, verify: true, resetAfter: true } });
+  assert.deepEqual(request, { command: 'pnx/flash', body: { path: artifact, verify: true, resetAfter: true } });
 });
 
 test('mock DAP adapter verifies a typed scalar write without touching hardware', { timeout: 15000 }, async () => {
