@@ -1,5 +1,6 @@
 mod protocol;
 mod native_data;
+mod serial_test;
 
 use std::{
     collections::HashMap,
@@ -25,6 +26,13 @@ use protocol::{DapReader, DapWriter, start_data_server};
 
 fn main() {
     let arguments = env::args().collect::<Vec<_>>();
+    if arguments.iter().any(|arg| arg == "--serial-test") {
+        if let Err(error) = serial_test::run(&arguments) {
+            eprintln!("PnX USART diagnostic: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     // Data-only sidecar: branch before creating any probe backend.
     if arguments.iter().any(|arg| arg == "--native-data") {
         if let Err(error) = native_data::run() {

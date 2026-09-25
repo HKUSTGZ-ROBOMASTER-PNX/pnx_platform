@@ -861,7 +861,7 @@ function updateDebugButtons() {
   $('quickFlash').disabled = !state.projectRoot || !state.config.params;
   $('flash').disabled = !state.projectRoot || !state.config.params;
   $('attach').disabled = $('connectFlash').disabled = $('scopeAttach').disabled = $('scopeWriteConnect').disabled = !state.projectRoot;
-  $('serialTest').disabled = !state.projectRoot;
+  $('serialTest').disabled = false;
 }
 async function connect(mock, allowFlash, allowDebug = false, switchView = true) {
   const rate = Number(state.view === 'scope' ? $('scopeRate').value : $('rate').value) || 1000;

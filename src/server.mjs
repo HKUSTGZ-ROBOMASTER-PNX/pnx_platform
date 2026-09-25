@@ -538,7 +538,7 @@ async function route(req, res) {
     if (!/^COM\d{1,3}$/i.test(input.port || '')) throw new Error('Enter a COM port such as COM7');
     const baud = Number(input.baud);
     if (!Number.isInteger(baud) || baud < 1200 || baud > 3000000) throw new Error('Invalid baud rate');
-    await command('python', [path.join(projectRoot, 'diagnose', 'tools', 'run_usart_demo.py'), '--port', input.port.toUpperCase(), '--baud', String(baud)], projectRoot, 'diagnostics');
+    await command(BACKEND, ['--serial-test', '--port', input.port.toUpperCase(), '--baud', String(baud)], ROOT, 'diagnostics');
     json(res, 200, { ok: true }); return;
   }
   json(res, 404, { error: 'Not found' });
