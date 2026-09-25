@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { BACKEND, TEMPLATE } from '../src/paths.mjs';
+import { BACKEND } from '../src/paths.mjs';
 
-const elf = path.resolve(process.argv[2] || path.join(TEMPLATE, 'build', 'h723-debug', 'pnx_embedded.elf'));
+if (!process.argv[2]) throw new Error('Pass an ELF path as the first argument');
+const elf = path.resolve(process.argv[2]);
 const inspected = spawnSync(BACKEND, ['--inspect-elf', elf], { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024, windowsHide: true });
 if (inspected.status !== 0) throw new Error(inspected.stderr || inspected.error?.message || `ELF inspection exited ${inspected.status}`);
 const ids = [];

@@ -90,13 +90,12 @@ internal sealed class PnxWindow : Form {
   private static bool IsPnx(string folder) {
     return !String.IsNullOrEmpty(folder)
       && File.Exists(Path.Combine(folder, "CMakePresets.json"))
-      && File.Exists(Path.Combine(folder, "configs", "cmake", "export_editor_context.cmake"));
+      && Directory.Exists(Path.Combine(folder, "configs", "boards"));
   }
 
-  private string FindTemplate() {
+  private string FindProject() {
     if (IsPnx(project)) return project;
-    string nearby = Path.GetFullPath(Path.Combine(appRoot, "..", "..", "..", "pnx_template"));
-    return IsPnx(nearby) ? nearby : null;
+    return null;
   }
 
   private async Task StartAsync() {
@@ -150,14 +149,13 @@ internal sealed class PnxWindow : Form {
     string executable = Path.Combine(appRoot, "bin", "node.exe");
     string script = Path.Combine(appRoot, "src", "server.mjs");
     if (!File.Exists(executable) || !File.Exists(script)) throw new FileNotFoundException("缺少内置 Node.js 或后端服务文件");
-    string template = FindTemplate();
+    string template = FindProject();
     var start = new ProcessStartInfo(executable, "\"" + script + "\"");
     start.WorkingDirectory = appRoot;
     start.UseShellExecute = false;
     start.CreateNoWindow = true;
     start.RedirectStandardOutput = true;
     start.RedirectStandardError = true;
-    Environment.SetEnvironmentVariable("PNX_TEMPLATE_ROOT", template ?? "", EnvironmentVariableTarget.Process);
     Environment.SetEnvironmentVariable("PNX_WORKSPACE_ROOT", Directory.Exists(workspace) ? workspace : (template ?? ""), EnvironmentVariableTarget.Process);
     Environment.SetEnvironmentVariable("PNX_CACHE_ROOT", Path.Combine(userRoot, "cache"), EnvironmentVariableTarget.Process);
     var ready = new TaskCompletionSource<string>();

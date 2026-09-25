@@ -12,7 +12,7 @@ import { Workspace } from './workspace.mjs';
 import { CsvRecorder } from './csv-recorder.mjs';
 import { scanToolchain, validateToolchain, verifyToolchain, toolchainPathDirectories, useToolchain, loadToolchain, saveToolchain, addToWindowsUserPath } from './toolchain.mjs';
 import { findDefinitions } from './symbols.mjs';
-import { ROOT, TEMPLATE, BACKEND, BOARDS, boardPaths, presetBoard } from './paths.mjs';
+import { ROOT, BACKEND, BOARDS, boardPaths, presetBoard } from './paths.mjs';
 import { bindingKinds, bindingValue, boardDefaults, fields, get, motorFields, motorModes, parameterActive, setPath, testRequirements, validate } from './config-editor.mjs';
 
 const token = randomBytes(24).toString('hex');
@@ -23,8 +23,8 @@ let selected = [];
 let selectedSet = new Set();
 let subscriptionSequence = 0;
 let currentBoard = 'h723_mc02';
-const workspace = new Workspace(process.env.PNX_WORKSPACE_ROOT || TEMPLATE);
-const isPnxProject = root => !!root && existsSync(path.join(root, 'CMakePresets.json')) && existsSync(path.join(root, 'configs', 'cmake', 'export_editor_context.cmake'));
+const workspace = new Workspace(process.env.PNX_WORKSPACE_ROOT || null);
+const isPnxProject = root => !!root && existsSync(path.join(root, 'CMakePresets.json')) && existsSync(path.join(root, 'configs', 'boards'));
 let projectRoot = isPnxProject(workspace.root) ? workspace.root : null;
 let busy = false;
 let writeBusy = false;
@@ -95,13 +95,22 @@ function readBoard(board) {
   const paths = boardPaths(board, projectRoot);
   const params = JSON.parse(readFileSync(paths.params, 'utf8'));
   const robot = JSON.parse(readFileSync(paths.robot, 'utf8'));
-  const output = path.join(cacheDir, `resources-${board}.json`);
-  return { board, paths, params, robot, output };
+  return { board, paths, params, robot };
 }
 async function resources(board) {
   const data = readBoard(board);
-  await command('cmake', [`-DPNX_BOARD=${board}`, `-DPNX_EDITOR_OUTPUT=${data.output}`, '-P', path.join(projectRoot, 'configs', 'cmake', 'export_editor_context.cmake')]);
-  const context = JSON.parse(readFileSync(data.output, 'utf8'));
+  const descriptors = JSON.parse(readFileSync(path.join(ROOT, 'config', 'board-resources.json'), 'utf8'));
+  const descriptor = descriptors[board];
+  if (!descriptor) throw new Error(`No built-in hardware description for ${board}`);
+  const boardFile = path.join(projectRoot, 'boards', board, 'board.json');
+  const projectBoard = existsSync(boardFile) ? JSON.parse(readFileSync(boardFile, 'utf8')) : null;
+  const context = { formatVersion: 1, board, files: { ...data.paths, board: projectBoard ? boardFile : null },
+    mcuFamily: projectBoard?.mcu_family || descriptor.mcuFamily,
+    hardware: structuredClone(descriptor.hardware) };
+  if (projectBoard?.bindings) {
+    context.hardware.gpio_input_role = Object.keys(projectBoard.bindings.gpio_inputs || {});
+    context.hardware.gpio_output_role = Object.keys(projectBoard.bindings.gpio_outputs || {});
+  }
   editorContexts.set(board, context);
   return { ...data, context, hardware: context.hardware, presets: BOARDS[board].presets };
 }
@@ -134,7 +143,7 @@ async function configEditorState(board, role, preset, refresh = false) {
   const chosenPreset = preset || BOARDS[board].presets[0];
   const configureResult = configureResults.get(`${projectRoot}|${chosenPreset}`);
   return { type: role === 'hardware' ? 'hardware' : 'render', role, version: item?.hash, data, error: '', board, preset: chosenPreset, presets: BOARDS[board].presets,
-    context: { ...context, hardware }, fresh: true, trusted: true, status: configureResult?.status || '资源已刷新', last: configureResult?.last || '尚未 Configure', reason: '使用当前项目的 IOC 导出',
+    context: { ...context, hardware }, fresh: true, trusted: true, status: configureResult?.status || '资源已刷新', last: configureResult?.last || '尚未 Configure', reason: '使用平台内置板卡资源与当前项目配置',
     local: Object.keys(errors).length ? '本地检查有问题' : configureResult?.status?.includes('成功') ? 'CMake 已通过' : '已覆盖字段本地检查通过，CMake 仍需确认', errors, fields: definitions,
     defaults, bindingKinds, motorFields, modeMap: Object.fromEntries(motorFields[1].choices.map(model => [model, motorModes(model)])) };
 }

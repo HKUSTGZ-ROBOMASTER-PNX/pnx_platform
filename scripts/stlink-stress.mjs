@@ -2,11 +2,14 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const seconds = Math.max(1, Number(process.argv[2]) || 15);
 const requestedChannels = Math.max(1, Math.min(20000, Math.floor(Number(process.argv[3]) || 57)));
 const mock = process.env.PNX_STRESS_MOCK === '1';
+const workspace = process.env.PNX_STRESS_WORKSPACE || process.env.PNX_WORKSPACE_ROOT;
+if (!mock && (!workspace || !existsSync(workspace))) throw new Error('Set PNX_STRESS_WORKSPACE to the opened PnX project folder');
 const classProfile = [
   ...[0,1,2,3].map(i => `demo_debug_instance.imu_unit.quaternion[${i}]`),
   ...['yaw','pitch','roll','total_yaw','imu_temperature'].map(name => `demo_debug_instance.imu_unit.${name}`),
@@ -23,7 +26,8 @@ const classProfile = [
 ];
 const localPointerFallback = ['tx_byte_pool_id','tx_byte_pool_available','tx_byte_pool_fragments','tx_byte_pool_size','tx_byte_pool_suspended_count','tx_byte_pool_list','tx_byte_pool_search','tx_byte_pool_start'].map(name => `_tx_byte_pool_created_ptr->${name}`);
 const localDirectFallback = ['tx_thread_id','tx_thread_run_count','tx_thread_stack_size','tx_thread_time_slice','tx_thread_new_time_slice','tx_thread_priority','tx_thread_state','tx_thread_delayed_suspend','tx_thread_suspending','tx_thread_preempt_threshold','tx_thread_entry_parameter','tx_thread_suspend_info','tx_thread_suspend_option','tx_thread_suspend_status','tx_thread_user_priority','tx_thread_owned_mutex_count'].map(name => `ahrs::service::instance::inst.imu_thread_.${name}`);
-const child = spawn(process.execPath, ['src/server.mjs'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+const child = spawn(process.execPath, ['src/server.mjs'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+  env: { ...process.env, PNX_WORKSPACE_ROOT: workspace || '' } });
 let stdout = '', stderr = '', origin, token, connected = false;
 child.stdout.on('data', bytes => { stdout += String(bytes); origin ||= /PnX Platform: (http:\/\/127\.0\.0\.1:\d+)/.exec(stdout)?.[1]; });
 child.stderr.on('data', bytes => { stderr += String(bytes); });

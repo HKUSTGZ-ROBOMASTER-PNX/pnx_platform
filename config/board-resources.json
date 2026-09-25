@@ -1,0 +1,124 @@
+{
+  "h723_mc02": {
+    "mcuFamily": "stm32h7",
+    "hardware": {
+      "adc": [
+        "adc1_ch4"
+      ],
+      "can": [
+        "fdcan1",
+        "fdcan2",
+        "fdcan3"
+      ],
+      "gpio": [
+        "pe10",
+        "pe12",
+        "pe9",
+        "pa0",
+        "pa2",
+        "pc0",
+        "pc13",
+        "pc3",
+        "pe13"
+      ],
+      "gpio_input": [
+        "pe10",
+        "pe12",
+        "pe9"
+      ],
+      "gpio_input_role": [
+        "bmi088_gyro_drdy"
+      ],
+      "gpio_output": [
+        "pa0",
+        "pa2",
+        "pc0",
+        "pc13",
+        "pc3",
+        "pe13"
+      ],
+      "gpio_output_role": [
+        "bmi088_acc_cs",
+        "bmi088_gyro_cs"
+      ],
+      "pwm": [
+        "TIM12_CH2",
+        "TIM3_CH4"
+      ],
+      "spi": [
+        "spi2",
+        "spi6"
+      ],
+      "uart": [
+        "uart5",
+        "uart7",
+        "usart1",
+        "usart10"
+      ],
+      "usb": true
+    }
+  },
+  "f407_c_board": {
+    "mcuFamily": "stm32f4",
+    "hardware": {
+      "adc": [],
+      "can": [
+        "can1",
+        "can2"
+      ],
+      "gpio": [
+        "pc5",
+        "pa4",
+        "pb0",
+        "pc8",
+        "pg6",
+        "ph10",
+        "ph11",
+        "ph12"
+      ],
+      "gpio_input": [
+        "pc5"
+      ],
+      "gpio_input_role": [
+        "bmi088_gyro_drdy"
+      ],
+      "gpio_output": [
+        "pa4",
+        "pb0",
+        "pc8",
+        "pg6",
+        "ph10",
+        "ph11",
+        "ph12"
+      ],
+      "gpio_output_role": [
+        "bmi088_acc_cs",
+        "bmi088_gyro_cs",
+        "led_b",
+        "led_g",
+        "led_r"
+      ],
+      "pwm": [
+        "TIM10_CH1",
+        "TIM1_CH1",
+        "TIM1_CH2",
+        "TIM1_CH3",
+        "TIM1_CH4",
+        "TIM4_CH3",
+        "TIM8_CH1",
+        "TIM8_CH2",
+        "TIM8_CH3"
+      ],
+      "spi": [
+        "spi1"
+      ],
+      "uart": [
+        "usart1",
+        "usart2",
+        "usart3",
+        "usart6"
+      ],
+      "usb": true
+    }
+  }
+}

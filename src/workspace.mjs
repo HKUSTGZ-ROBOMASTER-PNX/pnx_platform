@@ -12,7 +12,7 @@ export class Workspace {
     const root = realpathSync(folder);
     if (!statSync(root).isDirectory()) throw new Error('Selected path is not a folder');
     this.root = root;
-    return { root, isPnx: existsSync(path.join(root, 'CMakePresets.json')) && existsSync(path.join(root, 'configs', 'cmake', 'export_editor_context.cmake')) };
+    return { root, isPnx: existsSync(path.join(root, 'CMakePresets.json')) && existsSync(path.join(root, 'configs', 'boards')) };
   }
   resolve(relative = '') {
     if (!this.root) throw new Error('Open a folder first');

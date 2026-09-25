@@ -7,7 +7,15 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 test('standalone workbench loads board resources and streams mock samples', { timeout: 20000 }, async () => {
-  const child = spawn(process.execPath, ['src/server.mjs'], { cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const fixture = path.join(root, '.cache', `workbench-fixture-${process.pid}`);
+  const boardDir = path.join(fixture, 'configs', 'boards', 'h723_mc02');
+  mkdirSync(boardDir, { recursive: true });
+  writeFileSync(path.join(fixture, 'CMakePresets.json'), JSON.stringify({ version: 3, configurePresets: [{ name: 'h723-debug' }] }));
+  writeFileSync(path.join(boardDir, 'params.json'), JSON.stringify({ build: { usbx: false }, bindings: {} }));
+  writeFileSync(path.join(boardDir, 'robot.json'), JSON.stringify({ devices: { motors: { list: [{ model: 'dji_m3508', name: 'test' }] } } }));
+  const child = spawn(process.execPath, ['src/server.mjs'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+    env: { ...process.env, PNX_WORKSPACE_ROOT: fixture, PNX_CACHE_ROOT: path.join(fixture, 'cache') } });
   let output = '';
   child.stdout.on('data', value => { output += String(value); });
   try {

@@ -22,14 +22,13 @@ test('configure and build API executes the selected CMake preset', { timeout: 30
     configurePresets: [{ name: 'h723-debug', generator: 'Ninja', binaryDir: '${sourceDir}/build/h723-debug' }],
     buildPresets: [{ name: 'h723-debug', configurePreset: 'h723-debug' }],
   }));
-  mkdirSync(path.join(fixture, 'configs', 'cmake'), { recursive: true });
-  writeFileSync(path.join(fixture, 'configs', 'cmake', 'export_editor_context.cmake'), '# PnX fixture\n');
+  mkdirSync(path.join(fixture, 'configs', 'boards'), { recursive: true });
   const stale = path.join(fixture, 'build', 'h723-debug', 'CMakeCache.txt');
   mkdirSync(path.dirname(stale), { recursive: true });
   writeFileSync(stale, 'CMAKE_HOME_DIRECTORY:INTERNAL=D:/Workspace/robomaster/pnx_template\n');
   const child = spawn(process.execPath, ['src/server.mjs'], {
     cwd: root, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, PNX_TEMPLATE_ROOT: fixture, PNX_WORKSPACE_ROOT: fixture, PNX_CACHE_ROOT: path.join(fixture, 'cache') },
+    env: { ...process.env, PNX_WORKSPACE_ROOT: fixture, PNX_CACHE_ROOT: path.join(fixture, 'cache') },
   });
   let output = '', errors = '';
   child.stdout.on('data', bytes => { output += String(bytes); });

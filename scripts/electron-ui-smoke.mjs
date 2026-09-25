@@ -16,6 +16,15 @@ writeFileSync(path.join(fixture, 'first.cpp'), 'int first = helper();\n');
 writeFileSync(path.join(fixture, 'second.h'), 'inline int helper() { return 2; }\n');
 writeFileSync(path.join(fixture, 'CMakeLists.txt'), 'cmake_minimum_required(VERSION 3.21)\nproject(smoke NONE)\n');
 writeFileSync(path.join(fixture, 'CMakePresets.json'), JSON.stringify({ version: 3, configurePresets: [{ name: 'Debug', generator: 'Ninja' }] }));
+const pnxFixture = path.join(fixture, 'pnx-project');
+mkdirSync(path.join(pnxFixture, 'app'), { recursive: true });
+writeFileSync(path.join(pnxFixture, 'app', 'app.cpp'), 'int main() { return 0; }\n');
+writeFileSync(path.join(pnxFixture, 'CMakeLists.txt'), 'cmake_minimum_required(VERSION 3.21)\nproject(pnx_smoke NONE)\n');
+writeFileSync(path.join(pnxFixture, 'CMakePresets.json'), JSON.stringify({ version: 3, configurePresets: [{ name: 'h723-debug', generator: 'Ninja' }] }));
+const boardDir = path.join(pnxFixture, 'configs', 'boards', 'h723_mc02');
+mkdirSync(boardDir, { recursive: true });
+writeFileSync(path.join(boardDir, 'params.json'), JSON.stringify({ build: { usbx: false }, bindings: {} }));
+writeFileSync(path.join(boardDir, 'robot.json'), JSON.stringify({ devices: { motors: { list: [{ model: 'dji_m3508', name: 'smoke' }] } } }));
 const executable = process.argv[2];
 if (!executable) throw new Error('Pass the packaged PnX-Platform.exe path');
 const portServer = net.createServer();
@@ -27,6 +36,7 @@ await new Promise(resolve => portServer.close(resolve));
 const child = spawn(path.resolve(executable), [`--remote-debugging-port=${port}`], {
   cwd: root, windowsHide: true, stdio: 'ignore',
   env: { ...process.env, PNX_ELECTRON_TEST_MODE: '1', PNX_ELECTRON_AUTOCLOSE_MS: '30000',
+    PNX_WORKSPACE_ROOT: realProbe ? process.env.PNX_UI_PROJECT_ROOT : pnxFixture,
     ...(mockBanked ? { PNX_TEST_BANK_SIZE: '2' } : {}),
     PNX_DESKTOP_DATA_ROOT: path.join(root, '.cache', `ui-smoke-${process.pid}`),
     PNX_CAPTURE_ROOT: path.join(root, '.cache', `ui-captures-${process.pid}`) },

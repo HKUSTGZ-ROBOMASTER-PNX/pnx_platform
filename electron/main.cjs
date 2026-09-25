@@ -52,25 +52,20 @@ function saveSettings(settings) {
   fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2));
 }
 function isPnx(folder) {
-  return !!folder && fs.existsSync(path.join(folder, 'CMakePresets.json')) && fs.existsSync(path.join(folder, 'configs', 'cmake', 'export_editor_context.cmake'));
-}
-function localTemplate() {
-  const candidates = [
-    path.resolve(app.getAppPath(), '..', 'pnx_template'),
-    path.resolve(app.getAppPath(), '..', '..', '..', '..', '..', 'pnx_template'),
-  ];
-  return candidates.find(isPnx);
+  return !!folder && fs.existsSync(path.join(folder, 'CMakePresets.json')) && fs.existsSync(path.join(folder, 'configs', 'boards'));
 }
 function startServer() {
   return new Promise((resolve, reject) => {
     trace(`starting service from ${app.getAppPath()}`);
     const settings = loadSettings();
-    const project = isPnx(settings.project) ? settings.project : localTemplate();
-    const workspace = settings.workspace && fs.existsSync(settings.workspace) ? settings.workspace : project;
+    const project = isPnx(settings.project) ? settings.project : null;
+    const requested = process.env.PNX_WORKSPACE_ROOT;
+    const workspace = requested && fs.existsSync(requested) ? requested
+      : settings.workspace && fs.existsSync(settings.workspace) ? settings.workspace : project;
     const script = path.join(app.getAppPath(), 'src', 'server.mjs');
     server = spawn(process.execPath, [script], {
       cwd: app.getAppPath(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PNX_TEMPLATE_ROOT: project || '', PNX_WORKSPACE_ROOT: workspace || '',
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PNX_WORKSPACE_ROOT: workspace || '',
         PNX_CACHE_ROOT: path.join(dataRoot, 'cache') },
     });
     server.stdin.on('error', error => trace(`service stdin: ${error.message}`));
