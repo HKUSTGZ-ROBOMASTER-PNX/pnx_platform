@@ -1,0 +1,408 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PnX application parameters",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "build": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "usbx": {
+          "type": "boolean"
+        }
+      }
+    },
+    "bmi088": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "boost_duty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reboost_duty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "approach_start_duty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "approach_end_duty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "hold_max_duty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "pid_kp": {
+          "type": "number"
+        },
+        "pid_ki": {
+          "type": "number"
+        },
+        "pid_kd": {
+          "type": "number"
+        },
+        "pid_max_out": {
+          "type": "number"
+        },
+        "pid_max_iout": {
+          "type": "number"
+        },
+        "pid_scalar_a": {
+          "type": "number"
+        },
+        "pid_scalar_b": {
+          "type": "number"
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "remoter_uart": {
+          "type": "string",
+          "x-resource": "uart",
+          "x-extraChoices": [
+            "none"
+          ]
+        },
+        "vt03_uart": {
+          "type": "string",
+          "x-resource": "uart",
+          "x-extraChoices": [
+            "none"
+          ]
+        },
+        "referee_uart": {
+          "type": "string",
+          "x-resource": "uart",
+          "x-extraChoices": [
+            "none"
+          ]
+        },
+        "uart_ports": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "x-resource": "uart",
+            "x-extraChoices": [
+              "none"
+            ]
+          },
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "x-binding": "uart"
+        },
+        "can_buses": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "x-resource": "can"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "bus": {
+                    "type": "string",
+                    "x-resource": "can"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "x-binding": "can"
+        },
+        "spi_buses": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "x-resource": "spi"
+          },
+          "x-binding": "spi"
+        },
+        "adc_channels": {
+          "type": "object",
+          "x-binding": "adc",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "adc",
+              "channel"
+            ],
+            "properties": {
+              "adc": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "gpio_inputs": {
+          "type": "object",
+          "description": "Application aliases to fixed board GPIO input roles.",
+          "additionalProperties": {
+            "type": "string",
+            "x-resource": "gpio_input_role"
+          }
+        },
+        "gpio_outputs": {
+          "type": "object",
+          "description": "Application aliases to fixed board GPIO output roles.",
+          "additionalProperties": {
+            "type": "string",
+            "x-resource": "gpio_output_role"
+          }
+        }
+      }
+    },
+    "can": {
+      "type": "object",
+      "patternProperties": {
+        "^(fdcan|can)[0-9]+$": {
+          "type": "object",
+          "properties": {
+            "id_type": {
+              "type": "string",
+              "enum": [
+                "standard",
+                "extended"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "can_diag": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "sample_period_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "window_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "ahrs": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "solver": {
+          "type": "string",
+          "enum": [
+            "quaternion_ekf",
+            "tactical_ekf"
+          ]
+        },
+        "imu_offset_x": {
+          "type": "number"
+        },
+        "imu_thread_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "temp_thread_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "target_temp": {
+          "type": "number"
+        },
+        "loop_sleep_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "dmimu": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "communication_mode": {
+          "type": "string",
+          "enum": [
+            "active",
+            "request"
+          ]
+        },
+        "offline_timeout_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "thread_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "receive_wait_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "request_period_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "remoter": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "none",
+            "dr16",
+            "vt03",
+            "ps2",
+            "ps2_uart",
+            "off",
+            "disabled"
+          ],
+          "x-editorChoices": [
+            "none",
+            "dr16",
+            "vt03",
+            "ps2",
+            "ps2_uart"
+          ]
+        },
+        "thread_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "rx_timeout_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "offline_timeout_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "ps2": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "backend": {
+          "type": "string",
+          "enum": [
+            "spi",
+            "gpio"
+          ]
+        },
+        "cmd": {
+          "type": "string",
+          "x-resource": "gpio_output"
+        },
+        "data": {
+          "type": "string",
+          "x-resource": "gpio_input"
+        },
+        "clk": {
+          "type": "string",
+          "x-resource": "gpio_output"
+        },
+        "cs": {
+          "type": "string",
+          "x-resource": "gpio_output"
+        },
+        "spi": {
+          "type": "string",
+          "x-resource": "spi"
+        }
+      }
+    },
+    "referee": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "thread_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "motor_demo": {
+          "type": "boolean"
+        },
+        "thread_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "auto_run_on_boot": {
+          "type": "boolean"
+        },
+        "imu": {
+          "type": "boolean"
+        },
+        "usart": {
+          "type": "boolean"
+        },
+        "usb": {
+          "type": "boolean"
+        },
+        "remoter": {
+          "type": "boolean"
+        },
+        "referee_ui": {
+          "type": "boolean"
+        },
+        "can": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

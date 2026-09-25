@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PnX Platform</title><link rel="stylesheet" href="/style.css"></head>
+<body data-view="editor">
+<header class="titlebar">
+  <div class="brand"><span class="brand-mark">P</span><span class="brand-name">PnX Platform</span></div>
+  <nav class="view-tabs" aria-label="工作区视图">
+    <button class="view-switch active" data-view-target="editor" aria-pressed="true">编辑器</button>
+    <button class="view-switch" data-view-target="scope" aria-pressed="false">实时曲线</button>
+    <button class="view-switch" data-view-target="config" aria-pressed="false">设置与构建</button>
+  </nav>
+  <div class="title-actions"><button id="openFolder">打开文件夹</button><span id="status" class="header-status">启动中…</span></div>
+</header>
+<dialog id="folderDialog"><form method="dialog"><h2>打开文件夹</h2><label>文件夹绝对路径<input id="folderPath" required placeholder="D:\Workspace\project"></label><div class="row"><button value="cancel" formnovalidate>取消</button><button value="open" class="primary">打开</button></div></form></dialog>
+<dialog id="writeDialog" aria-labelledby="writeTitle"><h2 id="writeTitle">写入全局变量</h2><p id="writeTarget"></p><p id="writeCurrent"></p><label>新值<input id="writeValue" autocomplete="off" spellcheck="false"></label><p id="writeError" role="alert"></p><div class="row"><button id="writeCancel">取消</button><button id="writeSubmit" class="primary">写入并读回校验</button></div></dialog>
+<dialog id="definitionDialog" aria-labelledby="definitionTitle"><h2 id="definitionTitle">跳转到定义</h2><p id="definitionHint"></p><div id="definitionResults"></div><div class="row"><button id="definitionClose">关闭</button></div></dialog>
+<dialog id="lineDialog" aria-labelledby="lineTitle"><h2 id="lineTitle">跳转到行</h2><form method="dialog"><label>行号<input id="lineNumber" type="number" min="1" step="1" required></label><div class="row"><button value="cancel" formnovalidate>取消</button><button value="jump" class="primary">跳转</button></div></form></dialog>
+<dialog id="variablePicker" aria-labelledby="variablePickerTitle"><h2 id="variablePickerTitle">搜索添加变量</h2><input id="search" type="search" placeholder="搜索全局变量、结构体或实例…" aria-label="搜索变量"><button id="selectMatches" class="select-matches" disabled>添加筛选结果</button><div id="variables" class="variable-list"></div><div class="picker-footer"><span id="variableCount">0 / 0 匹配</span><button id="closeVariablePicker">完成</button></div></dialog>
+<dialog id="toolchainMissing" aria-labelledby="toolchainMissingTitle"><h2 id="toolchainMissingTitle">需要安装编译工具</h2><p id="toolchainMissingText"></p><p class="hint">是否打开缺失工具的官网下载页面？安装后返回工作台重新检测。</p><div class="row"><button id="toolchainDownload" class="primary">打开官网下载页</button><button id="toolchainMissingClose">稍后安装</button></div></dialog>
+<div id="desktopShell">
+  <nav id="activityBar" aria-label="工作区导航">
+    <button class="activity-button active" data-view-target="editor" aria-label="编辑器" title="编辑器"><svg class="activity-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h9l3.5 3.5v12.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z"/><path d="M15 3.5V7h3.5M10 11l-2 2 2 2m4-4 2 2-2 2"/></svg></button>
+    <button class="activity-button" data-view-target="scope" aria-label="实时曲线" title="实时曲线"><svg class="activity-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M6.5 14h2.2l2-4.5 3 7 2.2-4h1.6"/></svg></button>
+    <button class="activity-button" data-view-target="config" aria-label="设置与构建" title="设置与构建"><svg class="activity-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h3m4 0h9M4 12h10m4 0h2M4 18h5m4 0h7"/><circle cx="9" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg></button>
+  </nav>
+
+  <aside id="explorer" class="sidebar view-editor">
+    <div class="sidebar-heading"><h2>资源管理器</h2><span>EXPLORER</span></div>
+    <div id="folderRoot" class="folder-root">尚未打开文件夹</div>
+    <div id="fileTree" class="file-tree"></div>
+  </aside>
+  <section id="codeArea" class="view-editor">
+    <div class="editor-toolbar"><div class="editor-actions"><button id="quickConfigure">配置</button><button id="quickBuild" class="primary">编译</button><button id="quickDebug" title="保存、编译并连接调试器">调试连接</button><button id="quickPause" disabled>暂停</button><button id="quickContinue" disabled>继续</button><button id="quickStep" disabled>单步</button><button id="quickFlash" title="确认后保存、编译、连接并烧录" disabled>烧录</button></div><div class="editor-toolbar-right"><button id="goDefinition" title="跳转到光标处符号的定义 F12">转到定义</button><button id="goBack" title="返回上一个位置 Alt+←" disabled>返回</button><button id="goLine" title="跳转到行 Ctrl+G">行号</button><span id="debugState">未连接调试器</span><button id="terminalToggle" title="显示或隐藏底部输出 Ctrl+`">输出</button></div></div>
+    <div id="fileTabs" role="tablist" aria-label="已打开的文件"></div>
+    <div id="emptyEditor"><div><strong>开始编辑</strong><span>从左侧选择文件，或点击右上角打开文件夹。</span></div></div>
+    <div id="editorSurface" class="hidden"><pre id="codeHighlight" aria-hidden="true"></pre><textarea id="codeEditor" spellcheck="false" aria-label="代码编辑器"></textarea><div id="breakpointGutter" aria-label="点击行号设置断点"></div></div>
+    <div id="editorFooter"><span id="editorPath">未打开文件</span><span id="editorDirty"></span><button id="saveFile" disabled>保存 <kbd>Ctrl+S</kbd></button></div>
+  </section>
+
+  <section id="configArea" class="view-config"><div class="config-toolbar"><span>图形配置</span><button id="openDeviceTools" title="打开探针和串口诊断等设备工具">设备工具</button></div><iframe id="configFrame" title="PnX 图形配置" loading="lazy"></iframe></section>
+
+  <aside id="scopeSidebar" class="sidebar view-scope">
+    <div class="sidebar-heading"><h2>已添加变量</h2><span id="selectedCount">已选 0</span></div>
+    <button id="openVariablePicker" class="open-variable-picker" disabled>＋ 搜索添加变量</button>
+    <div class="selected-variable-head"><span>变量</span><span>当前值</span></div>
+    <div id="selectedVariables" class="selected-variable-list"></div>
+    <div class="scope-sidebar-footer"><span id="bankCount">采集分 1 组</span><button id="subscribe" class="primary" disabled>采集所选变量</button><div class="record-actions"><button id="recordStart" disabled>开始记录</button><button id="recordStop" disabled>停止记录</button><button id="exportCsv" disabled>导出 CSV</button></div><span id="recordStatus">尚未记录</span></div>
+  </aside>
+  <div id="scopeResize" role="separator" aria-orientation="vertical" aria-label="拖动调整变量栏宽度" tabindex="0"></div>
+  <section id="scopeArea" class="view-scope">
+    <div class="content-heading"><div><span class="eyebrow">LIVE TELEMETRY</span><h2>实时曲线</h2></div><span id="connectionBadge" class="connection-badge">未连接</span></div>
+    <div class="scope-toolbar">
+      <div class="scope-actions"><button id="scopeMock">模拟连接</button><button id="scopeAttach">连接目标板</button><button id="scopeWriteConnect" title="连接具有变量写入权限的真实目标板">可写连接</button><button id="scopeDisconnect" disabled>断开</button></div>
+      <div class="scope-rate">请求采样率 <input id="scopeRate" type="number" min="1" max="100000" value="1000" aria-label="请求采样率"> S/s</div>
+    </div>
+    <div id="metrics" class="scope-metrics">尚未采集数据</div>
+    <div id="scopeNotice" class="scope-notice hidden" role="status"></div>
+    <div class="plot-controls"><button id="addPlot">+ 添加曲线</button><label>排列 <select id="plotColumns"><option value="1">单列</option><option value="2" selected>双列</option><option value="3">三列</option></select></label><label>时间窗 <input id="plotTimeWindow" type="number" min="0.1" max="120" step="0.1" value="10" aria-label="所有曲线的横坐标时间长度">秒</label><button id="plotGridFullscreen" title="将全部曲线全屏显示">全屏曲线区</button><span>拖动曲线标题排序；在图中拖动回看、滚轮缩放</span></div>
+    <div id="plotGrid" class="plot-grid"></div>
+    <p class="scope-note">暂停只冻结曲线显示，采集与 CSV 记录继续。曲线历史受内存容量限制；CSV 保存完整采样。</p>
+  </section>
+
+  <main id="tools" class="view-tools">
+    <div class="tools-heading"><button id="backToConfig" class="back-to-config">← 图形配置</button><span class="eyebrow">DEVICE WORKSPACE</span><h2>设备工具</h2><p id="buildContext">板卡配置、编译、烧录与诊断工具</p></div>
+    <div class="tools-grid">
+      <section class="card"><div class="card-heading"><span class="section-index">01</span><h2>项目与板卡</h2></div>
+        <div class="row"><label>板卡<select id="board"></select></label><label>构建配置<select id="preset"></select></label><button id="reload">重新读取</button></div>
+        <div id="hardware" class="chips"></div>
+        <p class="hint">资源来自 PnX 的 IOC 与板级导出；引脚、时钟和 DMA 仍由 IOC 定义。</p>
+      </section>
+      <section class="card"><div class="card-heading"><span class="section-index">02</span><h2>配置与构建</h2></div>
+        <div class="row"><button id="configure">校验配置</button><button id="build" class="primary">编译固件</button></div>
+        <div class="toolchain-setup"><h3>嵌入式编译工具链</h3><div class="row"><button id="toolchainSetup">一键检测并配置</button><label>可选扫描目录<input id="toolchainFolder" placeholder="留空扫描常见安装目录"></label></div><div id="toolchainStatus" class="toolchain-status" role="status">尚未检测 CMake、Ninja 与 Arm GNU Toolchain</div></div>
+        <div class="two-col">
+          <div><h3>机器人设备 <small>robot.json</small></h3><div class="row"><label>电机<select id="motor"></select></label><label>CAN<select id="motorBus"></select></label></div>
+            <div class="row"><label>型号<input id="motorModel"></label><label>CAN ID<input id="motorId"></label></div>
+            <div class="row"><button id="saveMotor">保存所选电机</button><button id="showRobot">编辑完整 JSON</button></div></div>
+          <div><h3>应用参数 <small>params.json</small></h3><p class="hint">修改模块与运行参数后，请重新校验配置并编译。</p><button id="showParams">编辑 JSON</button></div>
+        </div>
+        <div id="editor" class="hidden"><div class="row"><h3 id="editorTitle"></h3><button id="saveJson" class="primary">保存 JSON</button><button id="closeJson">关闭</button></div><textarea id="jsonText" spellcheck="false"></textarea></div>
+      </section>
+      <section class="card"><div class="card-heading"><span class="section-index">03</span><h2>探针与烧录</h2></div>
+        <div class="row"><label>已发现的探针<select id="probeList"><option value="auto">自动选择</option></select></label><button id="scanProbes" type="button">扫描探针</button><label>探针 selector<input id="probe" value="auto" placeholder="auto 或设备 selector"></label><label>SWD 时钟 kHz<input id="speed" type="number" min="100" value="4000"></label><label>请求采样率 S/s<input id="rate" type="number" min="1" max="100000" value="1000"></label></div>
+        <p id="probeScanStatus" class="hint">支持 ST-Link 与 DAPLink / CMSIS-DAP；选择探针后通过 SWD 连接。</p>
+        <div class="row"><button id="mock">模拟连接</button><button id="attach">连接目标板</button><button id="connectFlash">连接并允许烧录</button><button id="flash" class="primary" disabled>编译并烧录</button><button id="disconnect" disabled>断开探针</button></div>
+        <p class="hint">断开探针不是电机急停；当前版本不提供电机运动控制或辨识。</p>
+      </section>
+      <section class="card"><div class="card-heading"><span class="section-index">04</span><h2>串口诊断</h2></div>
+        <div class="row"><label>串口<input id="serialPort" placeholder="COM7"></label><label>波特率<input id="baud" type="number" value="921600"></label><button id="serialTest">运行 USART 请求/响应测试</button></div>
+        <p class="hint">需要板上启用对应诊断固件和匹配的串口配置。</p>
+      </section>
+    </div>
+  </main>
+  <section id="terminalPanel" aria-label="底部输出终端">
+    <div id="terminalResize" role="separator" aria-orientation="horizontal" title="拖动调整输出高度"></div>
+    <div class="terminal-head"><span class="terminal-heading">输出</span><div id="terminalTabs" role="tablist" aria-label="输出终端"></div><div class="terminal-actions"><button id="terminalAdd" title="新建输出终端">＋</button><button id="terminalClear" title="清空当前终端">清空</button><button id="terminalHide" title="隐藏底部输出">⌄</button></div></div>
+    <pre id="log" role="tabpanel" aria-live="off"></pre>
+  </section>
+</div>
+<footer id="statusBar"><span id="workspaceLabel">打开文件夹以开始编辑</span><span class="status-right">PnX Platform · 本地工作台</span></footer>
+<script>window.PNX_TOKEN = '__PNX_TOKEN__';</script><script src="/app.js"></script>
+</body></html>

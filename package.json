@@ -1,0 +1,20 @@
+{
+  "name": "pnx-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-electron-win.ps1",
+    "package:release:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release-win.ps1",
+    "package:webview:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-win.ps1",
+    "package:electron:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-electron-win.ps1",
+    "package:electron:host": "node scripts/package-electron.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "38.8.6"
+  }
+}
