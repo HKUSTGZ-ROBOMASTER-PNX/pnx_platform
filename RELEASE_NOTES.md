@@ -1,9 +1,9 @@
-# PnX Platform v0.1.0
+# PnX Platform v0.2.0
 
-Windows x64 桌面工作台。下载 `PnX-Platform-Setup-windows-x64.exe` 并选择安装目录；ZIP 是免安装备用包。安装后的程序可打开任意文件夹编辑 C/C++ 文件，PnX 项目可配置、编译、通过 ST-Link 或 DAPLink 调试与烧录。
+本版将探针连接、调试和高频采样所用的 Rust 后端合并到平台仓库。Windows 安装包由 `native/` 源码编译并包含 `pnx-dap.exe`，启动和打包均不再查找相邻的 `cortex-kit` 或 `pnx_template` 仓库。应用启动后可直接打开任意文件夹；PnX 图形配置读取所选项目的 `configs/boards/<board>/params.json`、`robot.json`，使用平台内置的 Schema 和 H723/F407 板卡资源描述，可读取项目内的 `boards/<board>/board.json`。配置页不再执行项目中的导出脚本。
 
-本版提供源码断点（点击行号或 F9）、多 Plot 实时采集、暂停与回看、PNG/CSV 导出、图形板卡配置及工具链检测。断点需要带 DWARF 信息的 ELF 和可用的硬件断点槽。安装包内含 Cortex Kit DAP 后端；固件编译仍需要本机 CMake、Ninja 和 Arm GNU Toolchain。
+采样协议与核心读数逻辑保持原实现。连接中的 ST-Link 只读对照：相同 ELF、同一组 256 路 RAM 变量、1000 S/s 请求、8 秒测量，原后端为 49.0 S/s，新后端为 49.1 S/s；两者均收齐 256 路、丢帧 0。模拟采样 UI 测试的总体读取约 1020 S/s、丢帧 0。实际速率仍受探针、地址与板端负载影响。
 
-验证：19 项 Node 测试通过；Windows 打包程序通过模拟采样 UI 测试；安装程序可解压完整的 46 个运行文件。真实目标板的断点命中尚未在本次发布中验证。
+验证：19 项 Node 测试通过；Windows x64 Electron 独立包通过配置、编辑、构建按钮、调试按钮、曲线、记录与模拟采样 UI 测试。ST-Link 未执行烧录或电机控制。固件编译仍需 CMake、Ninja 和 Arm GNU Toolchain；从源码打包还需 Rust 工具链。
 
-安装包 SHA-256：`899ECDEDC80B59E41F6A56DB50558BA94B24E6985971AF82A2650FAB54C56395`
+安装包 SHA-256：`E850AC239DB79CC291851F3920DB1E158B196032AF7585B0CDA70E62BB994DAE`
