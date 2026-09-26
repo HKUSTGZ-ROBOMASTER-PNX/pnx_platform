@@ -990,6 +990,7 @@ function updateDebugButtons() {
   $('quickPause').disabled = !state.debugAccess || state.debugPaused;
   $('quickContinue').disabled = !state.debugAccess || !state.debugPaused;
   $('quickStep').disabled = !state.debugAccess || !state.debugPaused;
+  $('quickStop').disabled = !state.debugAccess;
   $('quickDebug').disabled = !state.projectRoot;
   $('quickFlash').disabled = !state.projectRoot || !state.config.params;
   $('flash').disabled = !state.projectRoot || !state.config.params;
@@ -1326,6 +1327,7 @@ function resetConnectionUI() {
   $('metrics').textContent = '尚未采集数据'; state.breakpointResults.clear(); updateConnection(); updateDebugButtons(); renderDebugPanel(); $('diagnosticFindings').replaceChildren(); $('diagnosticValues').replaceChildren(); displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();
 }
 $('disconnect').onclick = () => perform(disconnect);
+$('quickStop').onclick = () => perform(async () => { activateTerminal('debug'); await disconnect(); log('调试会话已结束，探针已断开', 'debug'); });
 $('scopeDisconnect').onclick = () => perform(disconnect);
 $('openVariablePicker').onclick = () => { $('search').value = ''; displayVariables(); $('variablePicker').showModal(); $('search').focus(); };
 $('closeVariablePicker').onclick = () => $('variablePicker').close();

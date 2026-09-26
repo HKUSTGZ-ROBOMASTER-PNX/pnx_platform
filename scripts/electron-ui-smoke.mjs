@@ -626,7 +626,9 @@ try {
   console.log(JSON.stringify({ profile: realProbe ? 'stlink-300' : mockBanked ? 'mock-banked-4' : 'mock-4', configPage, configNavigation, deviceTools, toolchainSetup, missingToolPrompt, probePicker, editor, genericState, navigation, savedDirtyTabs: 2, workflows, terminal, plots, axis, dragOrder: order,
     acquisition: { ...acquisition, liveValues: acquisition.liveValues.slice(0, 8) }, selectedView, plotInteraction, wheelZoom, panned, fullScreenPlot, fullScreenGrid, csv, variableTree, deepTree, variableControls, sidebarWidth, debugInspector,
     rendererTaskSecondsInTwoSeconds: Number((duration(performanceAfter) - duration(performanceBefore)).toFixed(3)), screenshotPath }, null, 2));
-  await evaluate('disconnect()');
+  assert.equal(await evaluate("document.getElementById('quickStop').disabled"), false);
+  await evaluate("document.getElementById('quickStop').onclick()");
+  assert.equal(await evaluate("!state.connected && !state.debugAccess && document.getElementById('quickStop').disabled && !document.getElementById('executionLine').classList.contains('visible')"), true);
   await evaluate('window.close()');
   closedByTest = true;
 } finally {
