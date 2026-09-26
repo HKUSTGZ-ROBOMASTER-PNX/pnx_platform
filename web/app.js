@@ -647,11 +647,11 @@ function changeVariableSelection(ids, checked) {
   for (const id of ids) {
     if (checked) {
       selected.add(id);
-      if (!state.plotAssignments.has(id)) state.plotAssignments.set(id, state.plots[0].id);
+      if (!state.plotAssignments.has(id)) state.plotAssignments.set(id, 'watch-only');
     } else selected.delete(id);
   }
   state.selected = [...selected];
-  displayVariables(); displaySelectedVariables(); renderPlots(); updateLive();
+  displayVariables(); displaySelectedVariables(); renderPlots(); updateLive(); scheduleAutoSampling();
 }
 function displayVariables() {
   const query = $('search').value.trim().toLowerCase();
@@ -733,13 +733,13 @@ function displaySelectedVariables() {
     row.setAttribute('aria-expanded', 'false');
     top.onclick = expandActions;
     row.onkeydown = event => { if (event.target === row && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); expandActions(); } };
-    const read = document.createElement('button'); read.textContent = '读取'; read.title = '读取当前值，不订阅曲线';
+    const read = document.createElement('button'); read.textContent = '↻'; read.setAttribute('aria-label', '读取当前值'); read.title = '读取当前值，不订阅曲线';
     read.onclick = () => perform(() => readWatchValues([id])); actions.append(read);
     if (variable.writable && state.debugAccess) {
       const edit = document.createElement('button'); edit.className = 'variable-write'; edit.textContent = '✎'; edit.title = `修改 ${variable.name}`;
       edit.onclick = () => openVariableWrite(variable); actions.append(edit);
     } else {
-      const reason = document.createElement('span'); reason.className = 'hint'; reason.textContent = '只读';
+      const reason = document.createElement('span'); reason.className = 'hint'; reason.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>'; reason.setAttribute('aria-label', '只读');
       reason.title = !state.debugAccess ? '需要可写连接' : variable.writeReason || '未确认显式初始化的全局标量'; actions.append(reason);
     }
     const remove = document.createElement('button'); remove.className = 'variable-remove'; remove.textContent = '×'; remove.title = `移除 ${variable.name}`;
@@ -887,6 +887,25 @@ function reorderPlot(sourceId, targetId) {
   state.plots.splice(to, 0, ...state.plots.splice(from, 1));
   renderPlots(); savePlotLayout();
 }
+function openOscilloscopeSettings(plot) {
+  const dialog = document.createElement('dialog'); dialog.className = 'scope-properties';
+  const title = document.createElement('h3'); title.textContent = `Oscilloscope · ${plot.name}`;
+  const hint = document.createElement('p'); hint.textContent = '选择此图显示的变量。未分配的变量仍自动更新数值。';
+  const rows = document.createElement('div'); rows.className = 'scope-property-variables';
+  const choices = state.selected.map(id => {
+    const label = document.createElement('label'), input = document.createElement('input'); input.type = 'checkbox'; input.checked = state.plotAssignments.get(id) === plot.id;
+    label.append(input, document.createTextNode(state.variableById.get(id)?.name || id)); rows.append(label); return {id,input};
+  });
+  const cancel = document.createElement('button'); cancel.textContent = '取消'; cancel.onclick = () => dialog.close();
+  const save = document.createElement('button'); save.textContent = '应用'; save.onclick = () => {
+    for (const {id,input} of choices) if (state.selected.includes(id)) {
+      if (input.checked) state.plotAssignments.set(id, plot.id);
+      else if (state.plotAssignments.get(id) === plot.id) state.plotAssignments.set(id, 'watch-only');
+    }
+    renderPlots(); displaySelectedVariables(); displayVariables(); savePlotLayout(); dialog.close();
+  };
+  dialog.append(title,hint,rows,cancel,save); dialog.onclose = () => dialog.remove(); document.body.append(dialog); dialog.showModal();
+}
 function plotGroupLabel(plot) { return `${state.plotGroups.find(group => group.id === (plot.groupId || 'default'))?.name || '默认组'} / ${plot.name}`; }
 function renderPlotGroups() {
   $('plotGroups').replaceChildren(...state.plotGroups.map(group => {
@@ -921,6 +940,7 @@ function renderPlots() {
       button.onclick = () => { state.plotPages.set(plot.id, page + delta); renderPlots(); };
       header.append(button);
     }
+    const settings = document.createElement('button'); settings.textContent = '⚙'; settings.title = 'Oscilloscope · 曲线设置'; settings.setAttribute('aria-label', '曲线设置'); settings.onclick = () => openOscilloscopeSettings(plot); header.append(settings);
     if (state.plots.length > 1) for (const [symbol, direction] of [['←',-1],['→',1]]) { const move = document.createElement('button'); move.textContent = symbol; move.title = direction < 0 ? '向前移动曲线' : '向后移动曲线'; const position = state.plots.indexOf(plot); move.disabled = position + direction < 0 || position + direction >= state.plots.length; move.onclick = () => reorderPlot(plot.id, state.plots[position + direction].id); header.append(move); }
     if (state.plots.length > 1) { const remove = document.createElement('button'); remove.textContent = '×'; remove.title = '移除曲线'; remove.onclick = () => { state.plots = state.plots.filter(item => item.id !== plot.id); state.plotPages.delete(plot.id); state.plotViews.delete(plot.id); for (const [id, assigned] of state.plotAssignments) if (assigned === plot.id) state.plotAssignments.set(id, state.plots[0].id); renderPlots(); displayVariables(); displaySelectedVariables(); savePlotLayout(); }; header.append(remove); }
     let drag = null;
@@ -1530,15 +1550,24 @@ $('openVariablePicker').onclick = () => { $('search').value = ''; displayVariabl
 $('closeVariablePicker').onclick = () => $('variablePicker').close();
 $('search').oninput = () => { $('variables').scrollTop = 0; displayVariables(); };
 $('selectMatches').onclick = () => { if (!$('search').value.trim()) return; changeVariableSelection(state.matchingVariableIds, true); };
-$('subscribe').onclick = () => perform(async () => {
+let autoSampleTimer, samplingUpdate = Promise.resolve();
+function scheduleAutoSampling() {
+  clearTimeout(autoSampleTimer);
+  autoSampleTimer = setTimeout(() => {
+    if (!state.connected) return;
+    samplingUpdate = samplingUpdate.catch(() => {}).then(() => state.connected ? applySampling() : undefined).catch(error => log(`自动采集失败：${error.message}`));
+  }, 250);
+}
+async function applySampling() {
   if (state.recording) applyRecordStatus(await api('/api/record/stop', {}));
   const rate = Number($('scopeRate').value) || 1000; $('rate').value = String(rate);
-  const result = await api('/api/subscribe', { ids: plotVariableIds(), rate });
+  const result = await api('/api/subscribe', { ids: [...state.selected], rate });
   clearTimeout(liveTimer); liveTimer = null;
   state.activeIds = result.ids; state.activeIndex = new Map(result.ids.map((id, index) => [id, index])); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = result.banks; state.bankSize = result.bankSize; state.bankDwellMs = result.dwellMs; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = performance.now(); state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
   $('metrics').textContent = result.ids.length ? '等待实时数据' : '尚未选择变量'; displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();
   log(`已订阅 ${result.ids.length} 个变量，${state.banks} 组采集`);
-});
+}
+$('subscribe').onclick = () => { clearTimeout(autoSampleTimer); samplingUpdate = samplingUpdate.catch(() => {}).then(() => applySampling()); return perform(() => samplingUpdate); };
 function askPlotGroupName(initial) {
   const dialog = document.createElement('dialog'), form = document.createElement('form'); form.method = 'dialog';
   const label = document.createElement('label'); label.textContent = '曲线组名称';

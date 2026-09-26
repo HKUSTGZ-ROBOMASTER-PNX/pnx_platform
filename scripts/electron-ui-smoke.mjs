@@ -651,11 +651,11 @@ try {
       document.getElementById('writeValue').value='8.5'; await document.getElementById('writeSubmit').onclick();
       await document.getElementById('subscribe').onclick();
       return {noSubscribe,readValue,plotIds:plotVariableIds(),selected:state.selected.length,
-        subscription:requests.find(item=>item.url==='/api/subscribe').request.ids,
+        subscription:requests.find(item=>item.url==='/api/subscribe').request.ids.includes(id),
         wrote:requests.some(item=>item.url==='/api/write-variable' && item.request.id===id)};
     } finally {window.fetch=previousFetch;}
   })()`);
-  assert.deepEqual(independentWatch,{noSubscribe:true,readValue:'7.250000',plotIds:[],selected:1,subscription:[],wrote:true});
+  assert.deepEqual(independentWatch,{noSubscribe:true,readValue:'7.250000',plotIds:[],selected:1,subscription:true,wrote:true});
   const sidebarDrag = await evaluate(`(() => {
     const handle = document.getElementById('scopeResize').getBoundingClientRect();
     return { x: handle.left + handle.width / 2, y: handle.top + handle.height / 2,
