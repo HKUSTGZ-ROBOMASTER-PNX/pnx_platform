@@ -232,8 +232,8 @@ body[data-view="editor"] #codeArea,body[data-view="scope"] #scopeArea,body[data-
 #executionLine.visible{display:block}
 #codeHighlight{z-index:1;background:transparent!important}#codeEditor{z-index:2}#breakpointGutter{z-index:3}
 .breakpoint-line.current-execution{background:rgba(223,181,76,.19);color:#f3df9e}
-.breakpoint-line.current-execution::after{content:"";position:absolute;left:2px;top:0;width:24px;height:21px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 2L22 12L4 22Z' fill='none' stroke='%23e8be53' stroke-width='1.7' stroke-linejoin='round'/%3E%3C/svg%3E") center/100% 100% no-repeat;pointer-events:none}
-.breakpoint-line.current-execution.has-breakpoint::before{left:8px;top:6.5px;width:8px;height:8px;pointer-events:none}
+.breakpoint-line.current-execution::after{content:"";position:absolute;left:2px;top:0;width:24px;height:21px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6.4 3.3L20.1 10.8Q22.2 12 20.1 13.2L6.4 20.7Q4.2 21.9 4.2 19.4V4.6Q4.2 2.1 6.4 3.3Z' fill='none' stroke='%23e8be53' stroke-width='1.35' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E") center/100% 100% no-repeat;pointer-events:none}
+.breakpoint-line.current-execution.has-breakpoint::before{left:9px;top:7.5px;width:6px;height:6px;pointer-events:none}
 
 .plot-controls{flex-wrap:wrap}
 .plot-controls label{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
