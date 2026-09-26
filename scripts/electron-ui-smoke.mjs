@@ -718,16 +718,29 @@ try {
     } finally {window.fetch=previousFetch;}
   })()`);
   assert.deepEqual(independentWatch,{noSubscribe:true,readValue:'7.250000',plotIds:[],selected:1,subscription:true,wrote:true});
-  const sidebarDrag = await evaluate(`(() => {
+  // The resize handle may be hidden behind a narrow hosted desktop or the
+  // saved sidebar width may already be at its 640 px limit.
+  await call('Emulation.setDeviceMetricsOverride',{width:1000,height:700,deviceScaleFactor:1,mobile:false});
+  const sidebarDrag = await evaluate(`(async () => {
+    setView('scope'); setScopeSidebarWidth(240);
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     const handle = document.getElementById('scopeResize').getBoundingClientRect();
-    return { x: handle.left + handle.width / 2, y: handle.top + handle.height / 2,
-      before: document.getElementById('scopeSidebar').getBoundingClientRect().width };
+    const x=handle.left+handle.width/2, y=handle.top+handle.height/2;
+    return {x,y,before:document.getElementById('scopeSidebar').getBoundingClientRect().width,
+      hit:document.elementFromPoint(x,y)?.id,limit:Math.min(640,window.innerWidth-350)};
   })()`);
-  await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: sidebarDrag.x, y: sidebarDrag.y, button: 'left', clickCount: 1 });
-  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sidebarDrag.x + 70, y: sidebarDrag.y, button: 'left', buttons: 1 });
-  await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: sidebarDrag.x + 70, y: sidebarDrag.y, button: 'left', clickCount: 1 });
-  const sidebarWidth = await evaluate("document.getElementById('scopeSidebar').getBoundingClientRect().width");
-  assert.ok(sidebarWidth >= sidebarDrag.before + 60);
+  assert.equal(sidebarDrag.hit,'scopeResize',`Resize handle must be visible: ${JSON.stringify(sidebarDrag)}`);
+  assert.ok(sidebarDrag.limit>=sidebarDrag.before+70,'Viewport must allow a 70 px resize');
+  let sidebarWidth;
+  try {
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sidebarDrag.x, y: sidebarDrag.y });
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: sidebarDrag.x, y: sidebarDrag.y, button: 'left', buttons: 1, clickCount: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sidebarDrag.x + 70, y: sidebarDrag.y, button: 'left', buttons: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: sidebarDrag.x + 70, y: sidebarDrag.y, button: 'left', buttons: 0, clickCount: 1 });
+    sidebarWidth = await evaluate("document.getElementById('scopeSidebar').getBoundingClientRect().width");
+    assert.ok(sidebarWidth>=sidebarDrag.before+60,`Resize did not move: before=${sidebarDrag.before}, after=${sidebarWidth}`);
+  } finally { await call('Emulation.clearDeviceMetricsOverride'); }
+
   const debugInspector = await evaluate(`(async () => {
     const previousFetch = window.fetch;
     const source = ${JSON.stringify(path.join(pnxFixture, 'app', 'app.cpp'))};
@@ -818,11 +831,17 @@ try {
 
   const themeCheck=await evaluate(`(() => {
     document.getElementById('themeToggle').click();
-    return {theme:document.documentElement.dataset.theme,saved:localStorage.getItem('pnx-theme'),background:getComputedStyle(document.getElementById('editorSurface')).backgroundColor,config:document.getElementById('configFrame').contentDocument.documentElement.dataset.theme,axis:themeColor('#dark','#light')};
+    return {theme:document.documentElement.dataset.theme,saved:localStorage.getItem('pnx-theme'),config:document.getElementById('configFrame').contentDocument.documentElement.dataset.theme,axis:themeColor('#dark','#light')};
   })()`);
-  assert.deepEqual(themeCheck,{theme:'light',saved:'light',background:'rgb(255, 255, 255)',config:'light',axis:'#light'});
-  await pause(200);
-  assert.deepEqual(await evaluate(`(() => {const style=getComputedStyle(document.getElementById('quickBuild'));return {background:style.backgroundColor,color:style.color};})()`),{background:'rgba(0, 0, 0, 0)',color:'rgb(54, 91, 181)'});
+  assert.deepEqual(themeCheck,{theme:'light',saved:'light',config:'light',axis:'#light'});
+  // Theme colors transition; computed style can still report the old frame.
+  const themeDeadline=Date.now()+2000;
+  while (Date.now()<themeDeadline && await evaluate("getComputedStyle(document.getElementById('editorSurface')).backgroundColor")!=='rgb(255, 255, 255)') await pause(40);
+  assert.equal(await evaluate("getComputedStyle(document.getElementById('editorSurface')).backgroundColor"),'rgb(255, 255, 255)');
+  const iconStyle = () => evaluate(`(() => {const style=getComputedStyle(document.getElementById('quickBuild'));return {background:style.backgroundColor,color:style.color};})()`);
+  const iconDeadline=Date.now()+2000;
+  while (Date.now()<iconDeadline && (await iconStyle()).color!=='rgb(54, 91, 181)') await pause(40);
+  assert.deepEqual(await iconStyle(),{background:'rgba(0, 0, 0, 0)',color:'rgb(54, 91, 181)'});
   assert.equal(await evaluate("getComputedStyle(document.getElementById('explorer')).backgroundColor"),'rgb(243, 244, 246)');
   assert.equal(await evaluate("getComputedStyle(document.getElementById('log')).backgroundColor"),'rgb(255, 255, 255)');
   await pause(150);
