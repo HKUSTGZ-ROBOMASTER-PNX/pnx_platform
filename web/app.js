@@ -1289,7 +1289,39 @@ $('probe').oninput = () => { $('probeList').selectedIndex = -1; };
 $('openFolder').onclick = () => perform(openFolder);
 $('codeEditor').oninput = () => { if (state.file) state.file.value = $('codeEditor').value; updateEditor(); scheduleHighlight(); };
 $('codeEditor').onscroll = () => { if (state.file) { state.file.scrollTop = $('codeEditor').scrollTop; state.file.scrollLeft = $('codeEditor').scrollLeft; } syncHighlightScroll(); renderBreakpointGutter(); };
-$('codeEditor').addEventListener('click', event => { if (event.ctrlKey || event.metaKey) perform(goToDefinition); });
+function hideDefinitionOverlay() { $('definitionOverlay').classList.remove('active'); }
+function showDefinitionOverlay() {
+  if (!state.file || state.view !== 'editor' || document.querySelector('dialog[open]')) return;
+  const overlay = $('definitionOverlay'), editor = $('codeEditor');
+  if (overlay.classList.contains('active')) return;
+  const fragment = document.createDocumentFragment();
+  let offset = 0;
+  for (const match of editor.value.matchAll(/[A-Za-z_]\w*/g)) {
+    fragment.append(document.createTextNode(editor.value.slice(offset, match.index)));
+    const link = document.createElement('span'); link.textContent = match[0]; link.dataset.offset = String(match.index);
+    link.title = `跳转到 ${match[0]} 的定义（Ctrl / Cmd + 单击）`;
+    fragment.append(link); offset = match.index + match[0].length;
+  }
+  fragment.append(document.createTextNode(editor.value.slice(offset) + '\n'));
+  overlay.replaceChildren(fragment); overlay.classList.add('active');
+  overlay.scrollTop = editor.scrollTop; overlay.scrollLeft = editor.scrollLeft;
+}
+document.addEventListener('keydown', event => { if (event.key === 'Control' || event.key === 'Meta') showDefinitionOverlay(); else hideDefinitionOverlay(); });
+document.addEventListener('keyup', event => { if (!event.ctrlKey && !event.metaKey) hideDefinitionOverlay(); });
+window.addEventListener('blur', hideDefinitionOverlay);
+$('codeEditor').addEventListener('pointermove', event => { if (event.ctrlKey || event.metaKey) showDefinitionOverlay(); });
+$('definitionOverlay').addEventListener('wheel', event => {
+  event.preventDefault(); const editor = $('codeEditor'); editor.scrollTop += event.deltaY; editor.scrollLeft += event.deltaX;
+  $('definitionOverlay').scrollTop = editor.scrollTop; $('definitionOverlay').scrollLeft = editor.scrollLeft;
+}, { passive: false });
+$('definitionOverlay').addEventListener('click', event => {
+  const link = event.target.closest('span[data-offset]');
+  hideDefinitionOverlay();
+  if (!(event.ctrlKey || event.metaKey) || !link) return;
+  event.preventDefault(); const offset = Number(link.dataset.offset);
+  $('codeEditor').setSelectionRange(offset, offset + link.textContent.length);
+  perform(goToDefinition);
+});
 $('goDefinition').onclick = () => perform(goToDefinition);
 $('goBack').onclick = () => perform(async () => { const previous = definitionHistory.pop(); if (previous) await navigateTo(previous, false); $('goBack').disabled = definitionHistory.length === 0; });
 $('goLine').onclick = goToLine;

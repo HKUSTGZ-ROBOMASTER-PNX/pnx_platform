@@ -214,6 +214,9 @@ body[data-view="editor"] #codeArea,body[data-view="scope"] #scopeArea,body[data-
 .editor-icon-button{display:grid;place-items:center;width:31px;min-width:31px;height:29px;padding:4px!important}
 .editor-icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 #quickStop:not(:disabled){color:#f48771}
+#definitionOverlay{display:none;position:absolute;inset:0;z-index:4;margin:0;padding:22px 28px 22px 76px;border:0;overflow:auto;scrollbar-width:none;white-space:pre;tab-size:4;font:14px/1.5 Consolas,"Cascadia Code","Courier New",monospace;color:transparent;background:transparent;user-select:none}
+#definitionOverlay.active{display:block}
+#definitionOverlay span:hover{color:#75baff;text-decoration:underline;cursor:pointer}
 #quickContinue svg{fill:currentColor;stroke:none}
 .toolbar-separator{height:19px;width:1px;background:var(--pnx-border-strong);margin:0 3px}
 .debug-panel{flex:none;max-height:215px;overflow:auto;padding:8px 13px;border-bottom:1px solid var(--pnx-border);background:#191b21;color:var(--pnx-text);font-size:11px}

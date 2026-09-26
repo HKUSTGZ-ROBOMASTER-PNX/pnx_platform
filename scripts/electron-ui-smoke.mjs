@@ -235,6 +235,20 @@ try {
     return { target, returned: state.file.path, backDisabled: document.getElementById('goBack').disabled };
   })()`);
   assert.deepEqual(navigation, { target: { path: 'second.h', selection: 'helper', backEnabled: true }, returned: 'first.cpp', backDisabled: true });
+  const ctrlNavigation = await evaluate(`(async () => {
+    document.getElementById('codeEditor').setSelectionRange(0, 0);
+    document.dispatchEvent(new KeyboardEvent('keydown', {key:'Control', ctrlKey:true, bubbles:true}));
+    const overlay=document.getElementById('definitionOverlay');
+    const link=[...overlay.querySelectorAll('span')].find(node=>node.textContent==='helper');
+    const visible=overlay.classList.contains('active');
+    link.dispatchEvent(new MouseEvent('click', {ctrlKey:true,bubbles:true}));
+    for(let i=0;i<100 && state.file.path!=='second.h';i++) await new Promise(resolve=>setTimeout(resolve,20));
+    const target=state.file.path;
+    document.getElementById('goBack').click();
+    for(let i=0;i<100 && state.file.path!=='first.cpp';i++) await new Promise(resolve=>setTimeout(resolve,20));
+    return {visible,target,returned:state.file.path,hidden:!overlay.classList.contains('active')};
+  })()`);
+  assert.deepEqual(ctrlNavigation,{visible:true,target:'second.h',returned:'first.cpp',hidden:true});
 
   const breakpoints = await evaluate(`(async () => {
     const originalFetch = window.fetch, calls = [];
