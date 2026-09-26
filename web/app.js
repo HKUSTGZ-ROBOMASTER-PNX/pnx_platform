@@ -659,15 +659,20 @@ function displayVariables() {
   $('variableCount').textContent = `${shownLeaves} / ${matchingIds.length} 匹配`;
   list.scrollTop = scrollTop;
 }
+const collapsedWatchBranches = new Set();
 function displaySelectedVariables() {
   const list = $('selectedVariables'), scrollTop = list.scrollTop;
-  list.replaceChildren(...state.selected.map((id, index) => {
+  const selected = new Set(state.selected), rendered = new Set();
+  const positions = new Map(state.selected.map((id,index) => [id,index]));
+  const renderLeaf = (id, label) => {
+    const index = positions.get(id);
     const variable = state.variableById.get(id);
     if (!variable) return document.createTextNode('');
+    rendered.add(id);
     const row = document.createElement('div'); row.className = 'selected-variable-row'; row.dataset.variableId = id;
     const top = document.createElement('div'); top.className = 'selected-variable-top';
     const swatch = document.createElement('i'); swatch.className = 'variable-swatch'; swatch.style.background = colors[index % colors.length];
-    const name = document.createElement('span'); name.className = 'selected-variable-name'; name.textContent = variable.name; name.title = `${variable.name} · ${variable.type || ''}`;
+    const name = document.createElement('span'); name.className = 'selected-variable-name'; name.textContent = label || variable.name; name.title = `${variable.name} · ${variable.type || ''}`;
     const value = document.createElement('strong'); value.className = 'selected-variable-value'; value.textContent = '—'; value.setAttribute('aria-label', `${variable.name} 当前值`);
     top.append(swatch, name, value);
     const actions = document.createElement('div'); actions.className = 'selected-variable-actions';
@@ -688,7 +693,26 @@ function displaySelectedVariables() {
     const remove = document.createElement('button'); remove.className = 'variable-remove'; remove.textContent = '×'; remove.title = `移除 ${variable.name}`;
     remove.onclick = () => changeVariableSelection([id], false);
     actions.append(remove); row.append(top, actions); return row;
-  }));
+  };
+  const renderNode = node => {
+    if (!node.children?.length) return selected.has(node.id) ? { element: renderLeaf(node.id, node.name), count: 1 } : null;
+    const children = node.children.map(renderNode).filter(Boolean);
+    if (!children.length) return null;
+    const count = children.reduce((sum, child) => sum + child.count, 0);
+    const branch = document.createElement('details'); branch.className = 'watch-branch'; branch.dataset.branchId = node.id;
+    branch.open = !collapsedWatchBranches.has(node.id);
+    const summary = document.createElement('summary'); summary.title = node.expression || node.name;
+    const title = document.createElement('span'); title.textContent = node.name || node.expression;
+    const amount = document.createElement('small'); amount.textContent = String(count); amount.title = '已添加变量数';
+    summary.append(title, amount);
+    const body = document.createElement('div'); body.className = 'watch-branch-children'; body.append(...children.map(child => child.element));
+    branch.append(summary, body);
+    branch.addEventListener('toggle', () => { if (branch.open) collapsedWatchBranches.delete(node.id); else collapsedWatchBranches.add(node.id); });
+    return { element: branch, count };
+  };
+  const roots = state.variableTree.map(renderNode).filter(Boolean).map(item => item.element);
+  for (const id of state.selected) if (!rendered.has(id)) roots.push(renderLeaf(id));
+  list.replaceChildren(...roots);
   list.scrollTop = scrollTop;
   updateLive();
 }
@@ -899,7 +923,7 @@ function updateConnection() {
   $('scopeDisconnect').disabled = !state.connected;
 }
 function updateLive() {
-  for (const row of $('selectedVariables').children) {
+  for (const row of $('selectedVariables').querySelectorAll('.selected-variable-row')) {
     const id = row.dataset.variableId;
     if (!id) continue;
     const latest = state.latestById.get(id);

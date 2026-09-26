@@ -581,6 +581,18 @@ try {
   })()`);
   assert.deepEqual(deepTree, { collapsed: true, firstLevel: 2, leafCount: 3, allSelected: true,
     searchPath: 3, searchSelected: ['deep.speed'] });
+  const watchTree = await evaluate(`(async () => {
+    displaySelectedVariables(); state.latestById.set('deep.speed',12.5); updateLive();
+    const branches=document.querySelectorAll('#selectedVariables details').length;
+    const ids=[...document.querySelectorAll('#selectedVariables .selected-variable-row')].map(row=>row.dataset.variableId);
+    const value=document.querySelector('#selectedVariables .selected-variable-value').textContent;
+    const root=document.querySelector('#selectedVariables details'); root.open=false;
+    await new Promise(resolve=>setTimeout(resolve,30)); displaySelectedVariables();
+    const preserved=!document.querySelector('#selectedVariables details').open;
+    changeVariableSelection(['deep.speed'],false);
+    return {branches,ids,value,preserved,empty:document.getElementById('selectedVariables').children.length===0};
+  })()`);
+  assert.deepEqual(watchTree,{branches:3,ids:['deep.speed'],value:'12.50000',preserved:true,empty:true});
   const pickerScreenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(path.join(root, '.cache', 'electron-ui-variable-picker.png'), Buffer.from(pickerScreenshot.data, 'base64'));
   const variableControls = await evaluate(`(async () => {

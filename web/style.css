@@ -193,6 +193,12 @@ body[data-view="editor"] #codeArea,body[data-view="scope"] #scopeArea,body[data-
 .selected-variable-list{flex:1;min-height:0;overflow:auto;padding:5px 6px 12px}
 .selected-variable-row{padding:7px 8px;margin-bottom:4px;border:1px solid transparent;border-radius:7px;background:var(--pnx-surface)}
 .selected-variable-row:hover{border-color:var(--pnx-border-strong)}
+.watch-branch{margin:3px 0;color:var(--pnx-text)}
+.watch-branch>summary{cursor:pointer;padding:6px 5px;font-size:12px;border-radius:5px;user-select:none}
+.watch-branch>summary:hover{background:var(--pnx-surface)}
+.watch-branch>summary span{overflow-wrap:anywhere}
+.watch-branch>summary small{margin-left:8px;color:var(--pnx-muted);font-size:10px}
+.watch-branch-children{margin-left:7px;padding-left:5px;border-left:1px solid var(--pnx-border)}
 .selected-variable-top{display:flex;align-items:center;gap:7px;min-width:0}
 .selected-variable-top .variable-swatch{flex:none;width:7px;height:7px;border-radius:50%}
 .selected-variable-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px/1.5 Consolas,"Cascadia Code",monospace;color:var(--pnx-text)}
