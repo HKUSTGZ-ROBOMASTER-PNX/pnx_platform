@@ -561,11 +561,26 @@ try {
   const fullScreenScreenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(path.join(root, '.cache', 'electron-ui-plot-fullscreen.png'), Buffer.from(fullScreenScreenshot.data, 'base64'));
   await evaluate('document.exitFullscreen()');
-  const gridCoordinates = await evaluate(`(() => { const rect = document.getElementById('plotGridFullscreen').getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; })()`);
-  await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: gridCoordinates.x, y: gridCoordinates.y, button: 'left', clickCount: 1 });
-  await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: gridCoordinates.x, y: gridCoordinates.y, button: 'left', clickCount: 1 });
-  await pause(120);
-  const fullScreenGrid = await evaluate("document.fullscreenElement?.id");
+  // Native macOS fullscreen transitions can outlast the DOM exit promise.
+  // Bring the toolbar button back into view before sending desktop input.
+  await pause(300);
+  const gridCoordinates = await evaluate(`(async () => {
+    const button=document.getElementById('plotGridFullscreen');
+    button.scrollIntoView({block:'center',inline:'center'});
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const rect=button.getBoundingClientRect();
+    const x=rect.left+rect.width/2,y=rect.top+rect.height/2;
+    return {x,y,hit:document.elementFromPoint(x,y)?.id,visible:rect.top>=0&&rect.bottom<=innerHeight};
+  })()`);
+  assert.equal(gridCoordinates.hit,'plotGridFullscreen',`Grid fullscreen button must be visible: ${JSON.stringify(gridCoordinates)}`);
+  let fullScreenGrid;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: gridCoordinates.x, y: gridCoordinates.y, button: 'left', clickCount: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: gridCoordinates.x, y: gridCoordinates.y, button: 'left', clickCount: 1 });
+    await pause(300);
+    fullScreenGrid = await evaluate("document.fullscreenElement?.id");
+    if (fullScreenGrid === 'plotGrid') break;
+  }
   assert.equal(fullScreenGrid, 'plotGrid');
   await evaluate('document.exitFullscreen()');
   await evaluate(`(() => { const card = document.querySelector('.plot-card[data-plot-id="${plotInteraction.plotId}"]'); card.querySelector('.plot-pause').click(); const input = document.getElementById('plotTimeWindow'); input.value = '10'; input.dispatchEvent(new Event('change')); })()`);
@@ -731,20 +746,25 @@ try {
   })()`);
   assert.equal(sidebarDrag.hit,'scopeResize',`Resize handle must be visible: ${JSON.stringify(sidebarDrag)}`);
   assert.ok(sidebarDrag.limit>=sidebarDrag.before+70,'Viewport must allow a 70 px resize');
-  let sidebarWidth;
+  let sidebarResize;
   try {
     // CDP mouse coordinates are mapped differently by some hosted macOS and
     // Windows desktops after Emulation.setDeviceMetricsOverride. The hit test
     // above checks the visible handle; dispatch pointer events in the renderer
     // so the resize behavior is deterministic on every runner.
-    sidebarWidth = await evaluate(`(() => {
+    sidebarResize = await evaluate(`(() => {
       const handle=document.getElementById('scopeResize');
       handle.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientX:${sidebarDrag.x},clientY:${sidebarDrag.y}}));
+      const active=handle.classList.contains('resizing');
       window.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,buttons:1,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
+      const afterMove=document.getElementById('scopeSidebar').getBoundingClientRect().width;
+      const cssWidth=document.getElementById('desktopShell').style.getPropertyValue('--scope-sidebar-width');
       window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
-      return document.getElementById('scopeSidebar').getBoundingClientRect().width;
+      return {width:document.getElementById('scopeSidebar').getBoundingClientRect().width,
+        afterMove,cssWidth,active,windowWidth:innerWidth,view:document.body.dataset.view};
     })()`);
-    assert.ok(sidebarWidth>=sidebarDrag.before+60,`Resize did not move: before=${sidebarDrag.before}, after=${sidebarWidth}`);
+    assert.ok(sidebarResize.width>=sidebarDrag.before+60,
+      `Resize did not move: before=${sidebarDrag.before}, result=${JSON.stringify(sidebarResize)}`);
   } finally { await call('Emulation.clearDeviceMetricsOverride'); }
 
   const debugInspector = await evaluate(`(async () => {
@@ -784,7 +804,7 @@ try {
   assert.equal(debugInspector.listed, 5);
   assert.match(debugInspector.statusHint, /not_configured/);
   console.log(JSON.stringify({ profile: realProbe ? 'stlink-300' : mockBanked ? 'mock-banked-4' : 'mock-4', configPage, configNavigation, deviceTools, toolchainSetup, missingToolPrompt, probePicker, editor, genericState, navigation, savedDirtyTabs: 2, workflows, terminal, plots, axis, dragOrder: order,
-    acquisition: { ...acquisition, liveValues: acquisition.liveValues.slice(0, 8) }, selectedView, plotInteraction, wheelZoom, panned, fullScreenPlot, fullScreenGrid, csv, variableTree, deepTree, variableControls, sidebarWidth, debugInspector,
+    acquisition: { ...acquisition, liveValues: acquisition.liveValues.slice(0, 8) }, selectedView, plotInteraction, wheelZoom, panned, fullScreenPlot, fullScreenGrid, csv, variableTree, deepTree, variableControls, sidebarResize, debugInspector,
     rendererTaskSecondsInTwoSeconds: Number((duration(performanceAfter) - duration(performanceBefore)).toFixed(3)), screenshotPath }, null, 2));
   assert.equal(await evaluate("document.getElementById('quickStop').disabled"), false);
   await evaluate("document.getElementById('quickStop').onclick()");

@@ -2,6 +2,7 @@ name: Build and publish release
 
 on:
   push:
+    branches: ['main']
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -37,17 +38,18 @@ jobs:
       run:
         shell: bash
     env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Set application and Rust versions from release tag
+        if: env.RELEASE_TAG != ''
         run: node scripts/release-version.mjs
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -144,6 +146,7 @@ jobs:
 
   publish:
     needs: build
+    if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
