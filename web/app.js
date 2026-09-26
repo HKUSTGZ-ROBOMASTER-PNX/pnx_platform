@@ -370,7 +370,15 @@ function renderBreakpointGutter() {
     button.classList.toggle('current-execution', current);
     button.title = `${hasBreakpoint ? `移除第 ${line} 行断点` : `设置第 ${line} 行断点`}${current ? ' · 当前执行位置（移除断点后仍保持暂停）' : ''}`;
     button.setAttribute('aria-label', button.title);
-    button.onclick = () => perform(() => toggleBreakpoint(state.file.path, line));
+    const file = state.file.path;
+    // A stop/scroll update may replace this node before mouseup. Handle the
+    // pointer action now; retain click for keyboard/assistive activation only.
+    button.onpointerdown = event => {
+      if (event.button !== 0 || !event.isPrimary) return;
+      event.preventDefault();
+      perform(() => toggleBreakpoint(file, line));
+    };
+    button.onclick = event => { if (!event || event.detail === 0) return perform(() => toggleBreakpoint(file, line)); };
     return button;
   }));
   renderExecutionLine();

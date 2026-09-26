@@ -276,6 +276,21 @@ try {
     } finally { state.debugAccess = false; window.fetch = originalFetch; }
   })()`);
   assert.deepEqual(breakpoints, { visible: true, saved: [1], calls: [{ path: 'first.cpp', lines: [1] }, { path: 'first.cpp', lines: [] }], verified: true, removed: true });
+  const gutterPoint = await evaluate(`(() => {
+    setView('editor'); hideDefinitionOverlay(); state.debugPaused=true; state.stoppedAt={path:'first.cpp',line:1};
+    renderBreakpointGutter();
+    const row=[...document.querySelectorAll('.breakpoint-line')].find(button=>button.textContent==='1');
+    const rect=row.getBoundingClientRect(); return {x:rect.x+12,y:rect.y+10};
+  })()`);
+  for (const refresh of [false, true]) for (const expected of [true, false]) {
+    await call('Input.dispatchMouseEvent', {type:'mousePressed',button:'left',clickCount:1,...gutterPoint});
+    if (refresh) await evaluate('renderBreakpointGutter()');
+    await pause(80);
+    await call('Input.dispatchMouseEvent', {type:'mouseReleased',button:'left',clickCount:1,...gutterPoint});
+    await pause(120);
+    assert.equal(await evaluate("state.breakpoints.get('first.cpp')?.has(1) || false"), expected, `Physical gutter click did not toggle breakpoint (refresh=${refresh})`);
+  }
+  await evaluate('state.debugPaused=false; state.stoppedAt=null; renderBreakpointGutter()');
 
   await evaluate(`(async () => {
     const selected = await api('/api/workspace/open', { folder: ${JSON.stringify(originalProject)} });
