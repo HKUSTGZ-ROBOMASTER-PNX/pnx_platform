@@ -733,9 +733,8 @@ try {
     } finally {window.fetch=previousFetch;}
   })()`);
   assert.deepEqual(independentWatch,{noSubscribe:true,readValue:'7.250000',plotIds:[],selected:1,subscription:true,wrote:true});
-  // The resize handle may be hidden behind a narrow hosted desktop or the
-  // saved sidebar width may already be at its 640 px limit.
-  await call('Emulation.setDeviceMetricsOverride',{width:1000,height:700,deviceScaleFactor:1,mobile:false});
+  // Use the packaged window's real viewport. DeviceMetricsOverride can keep
+  // Chromium's grid track layout stale on hosted Windows desktops.
   const sidebarDrag = await evaluate(`(async () => {
     setView('scope'); setScopeSidebarWidth(240);
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -746,28 +745,23 @@ try {
   })()`);
   assert.equal(sidebarDrag.hit,'scopeResize',`Resize handle must be visible: ${JSON.stringify(sidebarDrag)}`);
   assert.ok(sidebarDrag.limit>=sidebarDrag.before+70,'Viewport must allow a 70 px resize');
-  let sidebarResize;
-  try {
-    // CDP mouse coordinates are mapped differently by some hosted macOS and
-    // Windows desktops after Emulation.setDeviceMetricsOverride. The hit test
-    // above checks the visible handle; dispatch pointer events in the renderer
-    // so the resize behavior is deterministic on every runner.
-    sidebarResize = await evaluate(`(async () => {
-      const handle=document.getElementById('scopeResize');
-      handle.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientX:${sidebarDrag.x},clientY:${sidebarDrag.y}}));
-      const active=handle.classList.contains('resizing');
-      window.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,buttons:1,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
-      const afterMove=document.getElementById('scopeSidebar').getBoundingClientRect().width;
-      const cssWidth=document.getElementById('desktopShell').style.getPropertyValue('--scope-sidebar-width');
-      window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
-      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-      return {width:document.getElementById('scopeSidebar').getBoundingClientRect().width,
-        afterMove,cssWidth,active,windowWidth:innerWidth,view:document.body.dataset.view,
-        gridColumns:getComputedStyle(document.getElementById('desktopShell')).gridTemplateColumns};
-    })()`);
-    assert.ok(sidebarResize.width>=sidebarDrag.before+60,
-      `Resize did not move: before=${sidebarDrag.before}, result=${JSON.stringify(sidebarResize)}`);
-  } finally { await call('Emulation.clearDeviceMetricsOverride'); }
+  // The hit test above checks the visible handle; renderer pointer events
+  // verify its resize behavior without the host desktop's coordinate mapping.
+  const sidebarResize = await evaluate(`(async () => {
+    const handle=document.getElementById('scopeResize');
+    handle.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientX:${sidebarDrag.x},clientY:${sidebarDrag.y}}));
+    const active=handle.classList.contains('resizing');
+    window.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,buttons:1,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
+    const afterMove=document.getElementById('scopeSidebar').getBoundingClientRect().width;
+    const cssWidth=document.getElementById('desktopShell').style.getPropertyValue('--scope-sidebar-width');
+    window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    return {width:document.getElementById('scopeSidebar').getBoundingClientRect().width,
+      afterMove,cssWidth,active,windowWidth:innerWidth,view:document.body.dataset.view,
+      gridColumns:getComputedStyle(document.getElementById('desktopShell')).gridTemplateColumns};
+  })()`);
+  assert.ok(sidebarResize.width>=sidebarDrag.before+60,
+    `Resize did not move: before=${sidebarDrag.before}, result=${JSON.stringify(sidebarResize)}`);
 
   const debugInspector = await evaluate(`(async () => {
     const previousFetch = window.fetch;
