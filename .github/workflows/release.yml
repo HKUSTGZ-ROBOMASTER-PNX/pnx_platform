@@ -97,8 +97,69 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            asset: linux-x64
+          - runner: macos-15-intel
+            asset: macOS-x64
+          - runner: macos-14
+            asset: macOS-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libudev-dev libusb-1.0-0-dev libgtk-3-0 libnss3 libasound2 libgbm1 xvfb cmake ninja-build
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja pkg-config
+      - name: Configure Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Check version
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json")); if ("v"+p.version!==process.env.RELEASE_TAG) throw Error("Tag/version mismatch");'
+      - name: Build native backend and test
+        run: |
+          node scripts/build-native.mjs
+          npm test
+      - name: Package host application
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run package:electron:host
+      - name: Verify and archive Linux application
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/release-host.mjs
+      - name: Verify and archive macOS application
+        if: runner.os == 'macOS'
+        run: node scripts/release-host.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pnx-platform-${{ matrix.asset }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
-    needs: build
+    needs: [build, build-unix]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -109,7 +170,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: pnx-platform-windows
+          pattern: pnx-platform-*
+          merge-multiple: true
           path: artifacts
       - name: Create or update release
         shell: bash

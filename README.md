@@ -8,6 +8,21 @@ Windows 用户运行 `PnX-Platform-Setup-windows-x64.exe` 选择安装目录，�
 
 普通嵌入式工程会从 `CMakeLists.txt` / `.cmake` 的可执行目标、引用的 `.ld` 和现有 ELF 自动识别目标，也可在“目标与插件”中手动设置芯片和 ELF，使用变量采集、断点调试与烧录，无需符合 PnX 目录结构。构建可选 CMake preset 或自定义可执行程序及参数；关闭“调试与烧录前构建”可直接使用已有 ELF。PnX Framework 是按工程启用的内置插件，提供板卡配置与架构诊断。平台按 PnX 的 `configs/boards/<board>/params.json` 与 `robot.json` 结构提供图形配置；板卡资源描述和 Schema 随平台打包，不运行工程内的配置导出脚本。
 
+### Linux 与 macOS
+
+- Linux x64：解压 `PnX-Platform-linux-x64.tar.gz`，进入目录运行 `./"PnX Platform"`。构建基线为 Ubuntu 22.04，需桌面环境与 GTK3、NSS、ALSA、GBM 系统库。
+- macOS：按 CPU 选择 `PnX-Platform-macOS-arm64.dmg`（Apple Silicon）或 `PnX-Platform-macOS-x64.dmg`（Intel），打开后将应用拖到 Applications。当前为本地临时签名，尚无 Apple Developer ID 签名和公证；系统可能要求在“隐私与安全性”中确认打开。
+- 每个包都内置对应系统和架构的 Rust 后端，运行无需其它工程、Node.js 或 Rust。固件编译仍需本机的 CMake、Ninja 和 Arm 工具链。macOS 桌面启动支持 Homebrew 默认路径。
+- Linux 普通桌面用户连接探针前，可在解压目录执行以下操作，然后拔插探针。规则仅覆盖 ST-Link 与产品名称含 CMSIS-DAP 的设备；其它探针参考 [probe-rs 权限配置](https://probe.rs/docs/getting-started/probe-setup/)。串口还需拥有对应设备的访问权限。
+
+```sh
+sudo install -m 644 70-pnx-probes.rules /etc/udev/rules.d/70-pnx-probes.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+Linux/macOS 的真实硬件烧录、调试和采样性能尚待各平台实板验证，CI 使用模拟后端验证应用运行。
+
 ## 主要功能
 
 - 编辑器支持多文件标签、C/C++、Python 轻量高亮和 Markdown 预览、文件和行号跳转、定义查找、断点，以及底部多标签输出面板。
@@ -50,7 +65,7 @@ node scripts/electron-ui-smoke.mjs <PnX-Platform.exe 路径>
 
 ## GitHub Actions 发布
 
-`.github/workflows/release.yml` 在推送 `vMAJOR.MINOR.PATCH` 标签时构建 Windows x64 安装 EXE、便携 ZIP 与 `SHA256SUMS.txt`，测试通过后创建 GitHub Release。构建仅使用本仓库，所需 Rust、MinGW 和 Electron 由 runner 安装；Electron 下载校验 SHA256。
+`.github/workflows/release.yml` 在推送 `vMAJOR.MINOR.PATCH` 标签时构建 Windows x64 安装 EXE/ZIP、Linux x64 tar.gz、macOS Intel/Apple Silicon DMG 及校验清单。四个平台全部通过测试后创建 GitHub Release。构建仅使用本仓库，所需 Rust、MinGW 和 Electron 由 runner 安装；Electron 下载校验 SHA256。
 
 首次启用时，先提交并推送 workflow 到默认分支。在 Actions → Build and publish release → Run workflow 中输入已有标签（如 `v1.0.0`）即可补发；构建会检出该标签的代码并核对版本。以后新版本提交后推送新标签即可触发。重跑已有 Release 会更新同名附件。发布 job 使用仓库自带的 `GITHUB_TOKEN`，无需个人 token；仓库需允许 GitHub Actions 运行。
 

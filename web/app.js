@@ -140,7 +140,7 @@ $('terminalClear').onclick = () => { terminals.set(activeTerminal, ''); renderTe
 $('terminalHide').onclick = () => document.body.classList.add('terminal-closed');
 $('terminalToggle').onclick = () => document.body.classList.toggle('terminal-closed');
 document.addEventListener('keydown', event => {
-  if (event.ctrlKey && event.key === '`') { event.preventDefault(); document.body.classList.toggle('terminal-closed'); }
+  if ((event.ctrlKey || event.metaKey) && event.key === '`') { event.preventDefault(); document.body.classList.toggle('terminal-closed'); }
 });
 let terminalResizeStart;
 $('terminalResize').addEventListener('pointerdown', event => {

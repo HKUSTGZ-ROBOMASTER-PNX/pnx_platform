@@ -1,0 +1,5 @@
+# Grant the active local desktop user access to ST-Link and CMSIS-DAP probes.
+# Install in /etc/udev/rules.d/, reload rules, then reconnect the probe.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="3748|374b|374a|3742|3752|374e|374f|3753|3754|3757", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{product}=="*CMSIS-DAP*", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{product}=="*CMSIS-DAP*", TAG+="uaccess"

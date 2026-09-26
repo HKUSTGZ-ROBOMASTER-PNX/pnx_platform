@@ -5,6 +5,14 @@ const path = require('node:path');
 const os = require('node:os');
 let logRoot = __dirname;
 let dataRoot;
+// Finder / desktop launchers do not inherit an interactive shell's PATH.
+if (process.platform !== 'win32') {
+  const directories = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const candidate of ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', path.join(os.homedir(), '.local', 'bin')]) {
+    if (fs.existsSync(candidate) && !directories.includes(candidate)) directories.push(candidate);
+  }
+  process.env.PATH = directories.join(path.delimiter);
+}
 function trace(message) {
   try { fs.appendFileSync(path.join(logRoot, 'desktop.log'), `${new Date().toISOString()} ${message}\n`); } catch { /* Storage may be read-only. */ }
 }

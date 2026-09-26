@@ -31,7 +31,7 @@ test('server starts without any project and uses its bundled serial backend', { 
     assert.equal(boards.backend, true);
     const diagnostic = await fetch(`${origin}/api/serial-test`, { method: 'POST', headers, body: JSON.stringify({ port: 'COM999', baud: 921600 }) });
     assert.equal(diagnostic.status, 400);
-    assert.match(output, /Running: pnx-dap\.exe --serial-test --port COM999/);
+    assert.match(output, /Running: pnx-dap(?:\.exe)? --serial-test --port COM999/);
     const mock = await fetch(`${origin}/api/connect`, { method: 'POST', headers, body: JSON.stringify({ mock: true, rate: 1000 }) });
     const connected = await mock.json();
     assert.equal(mock.status, 200, JSON.stringify(connected));

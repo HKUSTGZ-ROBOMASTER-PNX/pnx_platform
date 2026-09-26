@@ -1,0 +1,10 @@
+import { execFileSync } from 'node:child_process';
+import { chmodSync, copyFileSync, mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+const root = fileURLToPath(new URL('..', import.meta.url));
+execFileSync('cargo', ['build', '--release', '--locked', '--manifest-path', path.join(root, 'native/Cargo.toml'), '-p', 'pnx-dap'], { stdio: 'inherit' });
+const name = process.platform === 'win32' ? 'pnx-dap.exe' : 'pnx-dap';
+mkdirSync(path.join(root, 'bin'), { recursive: true });
+copyFileSync(path.join(root, 'native/target/release', name), path.join(root, 'bin', name));
+if (process.platform !== 'win32') chmodSync(path.join(root, 'bin', name), 0o755);

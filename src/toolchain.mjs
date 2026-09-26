@@ -32,7 +32,7 @@ function defaultRoots(env, platform, home) {
     env.USERPROFILE && path.join(env.USERPROFILE, 'scoop', 'apps'), env.ChocolateyInstall,
     'C:\\ST', 'C:\\Tools', 'C:\\Apps', 'D:\\Apps', 'D:\\Tools',
   ], platform);
-  return uniquePaths(['/usr/local', '/opt', '/opt/homebrew', path.join(home, '.local'), path.join(home, 'opt')], platform);
+  return uniquePaths(['/usr/bin', '/usr/local/bin', '/opt/homebrew/bin', '/usr/local', '/opt', path.join(home, '.local'), path.join(home, 'opt')], platform);
 }
 export function scanToolchain({ env = process.env, platform = process.platform, roots, home = os.homedir(), maxDirectories = 12000, preferRoots = false } = {}) {
   const found = {};

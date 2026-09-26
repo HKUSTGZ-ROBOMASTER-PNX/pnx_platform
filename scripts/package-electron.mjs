@@ -24,11 +24,17 @@ try {
 
   const { default: packager } = await import('@electron/packager');
   const output = await packager({
-    dir: stage, name: 'PnX Platform', electronVersion: '38.8.6',
+    dir: stage, name: 'PnX Platform', electronVersion: sourcePackage.devDependencies.electron,
+    appBundleId: 'org.pnx.platform',
     platform: process.platform, arch: process.arch,
     icon: path.join(source, 'assets', process.platform === 'win32' ? 'pnx-icon.ico' : process.platform === 'darwin' ? 'pnx-icon.icns' : 'pnx-icon.png'),
     out: path.join(source, 'dist'), overwrite: false, asar: false,
   });
+  for (const folder of output) {
+    cpSync(path.join(source, 'README.md'), path.join(folder, 'README.md'));
+    if (process.platform === 'linux') cpSync(path.join(source, 'assets/70-pnx-probes.rules'), path.join(folder, '70-pnx-probes.rules'));
+  }
+  writeFileSync(path.join(source, 'dist', 'package-path.json'), JSON.stringify(output));
   for (const item of output) process.stdout.write(`Packaged: ${item}\n`);
 } finally {
   const resolved = path.resolve(stage);
