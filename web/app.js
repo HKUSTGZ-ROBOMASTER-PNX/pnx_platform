@@ -160,18 +160,24 @@ function setScopeSidebarWidth(width) {
   scheduleDraw(true);
 }
 let scopeResizeStart;
-$('scopeResize').addEventListener('pointerdown', event => {
+function beginScopeResize(event) {
   if (event.button !== 0) return;
+  if (scopeResizeStart) return;
   scopeResizeStart = { x: event.clientX, width: $('scopeSidebar').getBoundingClientRect().width };
-  $('scopeResize').setPointerCapture(event.pointerId);
   $('scopeResize').classList.add('resizing');
-});
-$('scopeResize').addEventListener('pointermove', event => {
+  event.preventDefault();
+}
+function moveScopeResize(event) {
   if (scopeResizeStart) setScopeSidebarWidth(scopeResizeStart.width + event.clientX - scopeResizeStart.x);
-});
+}
 function endScopeResize() { scopeResizeStart = undefined; $('scopeResize').classList.remove('resizing'); }
-$('scopeResize').addEventListener('pointerup', endScopeResize);
-$('scopeResize').addEventListener('pointercancel', endScopeResize);
+$('scopeResize').addEventListener('pointerdown', beginScopeResize);
+$('scopeResize').addEventListener('mousedown', beginScopeResize);
+window.addEventListener('pointermove', moveScopeResize, true);
+window.addEventListener('mousemove', moveScopeResize, true);
+window.addEventListener('pointerup', endScopeResize, true);
+window.addEventListener('mouseup', endScopeResize, true);
+window.addEventListener('pointercancel', endScopeResize, true);
 $('scopeResize').addEventListener('keydown', event => {
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
   event.preventDefault();

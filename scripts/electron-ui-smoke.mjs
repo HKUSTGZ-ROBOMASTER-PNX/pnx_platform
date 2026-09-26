@@ -733,11 +733,17 @@ try {
   assert.ok(sidebarDrag.limit>=sidebarDrag.before+70,'Viewport must allow a 70 px resize');
   let sidebarWidth;
   try {
-    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sidebarDrag.x, y: sidebarDrag.y });
-    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: sidebarDrag.x, y: sidebarDrag.y, button: 'left', buttons: 1, clickCount: 1 });
-    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sidebarDrag.x + 70, y: sidebarDrag.y, button: 'left', buttons: 1 });
-    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: sidebarDrag.x + 70, y: sidebarDrag.y, button: 'left', buttons: 0, clickCount: 1 });
-    sidebarWidth = await evaluate("document.getElementById('scopeSidebar').getBoundingClientRect().width");
+    // CDP mouse coordinates are mapped differently by some hosted macOS and
+    // Windows desktops after Emulation.setDeviceMetricsOverride. The hit test
+    // above checks the visible handle; dispatch pointer events in the renderer
+    // so the resize behavior is deterministic on every runner.
+    sidebarWidth = await evaluate(`(() => {
+      const handle=document.getElementById('scopeResize');
+      handle.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientX:${sidebarDrag.x},clientY:${sidebarDrag.y}}));
+      window.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,buttons:1,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
+      window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
+      return document.getElementById('scopeSidebar').getBoundingClientRect().width;
+    })()`);
     assert.ok(sidebarWidth>=sidebarDrag.before+60,`Resize did not move: before=${sidebarDrag.before}, after=${sidebarWidth}`);
   } finally { await call('Emulation.clearDeviceMetricsOverride'); }
 
