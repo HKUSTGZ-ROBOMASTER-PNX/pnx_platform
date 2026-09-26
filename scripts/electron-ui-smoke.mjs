@@ -664,7 +664,7 @@ try {
     const ids=[...document.querySelectorAll('#selectedVariables .selected-variable-row')].map(row=>row.dataset.variableId);
     const value=document.querySelector('#selectedVariables .selected-variable-value').textContent;
     const root=document.querySelector('#selectedVariables details'); root.open=false;
-    await new Promise(resolve=>setTimeout(resolve,30)); displaySelectedVariables();
+    displaySelectedVariables();
     const preserved=!document.querySelector('#selectedVariables details').open;
     changeVariableSelection(['deep.speed'],false);
     return {branches,ids,value,preserved,empty:document.getElementById('selectedVariables').children.length===0};

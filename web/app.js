@@ -766,6 +766,10 @@ function displayVariables() {
 const collapsedWatchBranches = new Set();
 function displaySelectedVariables() {
   const list = $('selectedVariables'), scrollTop = list.scrollTop;
+  for (const branch of list.querySelectorAll('details.watch-branch')) {
+    if (branch.open) collapsedWatchBranches.delete(branch.dataset.branchId);
+    else collapsedWatchBranches.add(branch.dataset.branchId);
+  }
   const selected = new Set(state.selected), rendered = new Set();
   const positions = new Map(state.selected.map((id,index) => [id,index]));
   const renderLeaf = (id, label) => {
@@ -822,7 +826,10 @@ function displaySelectedVariables() {
     summary.append(title, amount);
     const body = document.createElement('div'); body.className = 'watch-branch-children'; body.append(...children.map(child => child.element));
     branch.append(summary, body);
-    branch.addEventListener('toggle', () => { if (branch.open) collapsedWatchBranches.delete(node.id); else collapsedWatchBranches.add(node.id); });
+    branch.addEventListener('toggle', () => {
+      if (!branch.isConnected) return;
+      if (branch.open) collapsedWatchBranches.delete(node.id); else collapsedWatchBranches.add(node.id);
+    });
     return { element: branch, count };
   };
   const roots = state.variableTree.map(renderNode).filter(Boolean).map(item => item.element);
