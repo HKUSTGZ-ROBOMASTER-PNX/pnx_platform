@@ -410,11 +410,14 @@ impl Backend for ProbeRsBackend {
         download_file_with_options(session, path, format, options)
             .map_err(|error| error.to_string())?;
         if reset_after {
-            session
-                .core(0)
-                .and_then(|mut core| core.reset_and_halt(Duration::from_millis(500)))
-                .map(|_| ())
-                .map_err(|error| error.to_string())?;
+            let mut core = session.core(0).map_err(|error| error.to_string())?;
+            // Programming must not inherit breakpoint comparators from an old
+            // debug session. Fail before resuming if cleanup or reset fails.
+            core.clear_all_hw_breakpoints()
+                .map_err(|error| format!("failed to clear breakpoints after programming: {error}"))?;
+            core.reset_and_halt(Duration::from_millis(500))
+                .map_err(|error| format!("failed to reset after programming: {error}"))?;
+            self.installed_breakpoints.clear();
         }
         self.pointer_cache.clear();
         Ok(())

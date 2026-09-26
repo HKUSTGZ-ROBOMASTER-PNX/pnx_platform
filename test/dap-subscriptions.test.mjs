@@ -69,3 +69,19 @@ test('debug snapshot reads globals and the stopped program counter without chang
     assert.deepEqual(session.ids, []);
   } finally { await session.stop(); }
 });
+
+
+test('standalone flash resumes only after successful flash and reports resume failures', async () => {
+  const session = new DapSession(() => {}, () => {}), calls = [];
+  session.flash = async elf => { calls.push('flash:'+elf); };
+  session.debug = async command => { calls.push(command); };
+  await session.flashAndRun('firmware.elf');
+  assert.deepEqual(calls,['flash:firmware.elf','continue']);
+  calls.length=0;
+  session.flash = async () => { throw new Error('verification failed'); };
+  await assert.rejects(session.flashAndRun('firmware.elf'),/verification failed/);
+  assert.deepEqual(calls,[]);
+  session.flash = async () => {};
+  session.debug = async () => { throw new Error('resume failed'); };
+  await assert.rejects(session.flashAndRun('firmware.elf'),/resume failed/);
+});

@@ -1153,6 +1153,7 @@ function renderDebugPanel() {
   renderBreakpointGutter();
 }
 async function handleDebugEvent(data) {
+  if (!state.debugAccess || state.flashAccess || flashInProgress) return;
   const revision = ++stopRevision;
   if (data.event !== 'stopped') {
     state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null;
@@ -1184,7 +1185,7 @@ function updateDebugButtons() {
   $('quickContinue').disabled = !state.debugAccess || !state.debugPaused;
   $('quickStep').disabled = !state.debugAccess || !state.debugPaused;
   $('quickStop').disabled = !state.debugAccess;
-  const hasTarget = !!state.projectRoot || !!(state.workspace && state.projectProfile?.target.chip && state.projectProfile?.target.elf);
+  const hasTarget = !flashInProgress && (!!state.projectRoot || !!(state.workspace && state.projectProfile?.target.chip && state.projectProfile?.target.elf));
   $('quickDebug').disabled = $('quickFlash').disabled = $('flash').disabled = !hasTarget;
   $('quickDebug').title = buildBeforeConnect() ? '保存、编译并连接调试器' : '使用配置的 ELF 连接调试器';
   $('quickFlash').title = buildBeforeConnect() ? '确认后编译并烧录' : '确认后烧录配置的 ELF';
@@ -1249,11 +1250,11 @@ async function connect(mock, allowFlash, allowDebug = false, switchView = true) 
     log(`探针已切换：${result.probe}`);
   }
   clearTimeout(liveTimer); liveTimer = null;
-  setVariableCatalog(result.variables, result.tree); state.connected = true; state.flashAccess = allowFlash && !mock; state.debugAccess = (allowDebug || allowFlash) && !mock; state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null; stopRevision++; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
+  setVariableCatalog(result.variables, result.tree); state.connected = true; state.flashAccess = allowFlash && !mock; state.debugAccess = allowDebug && !mock; state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null; stopRevision++; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
   $('openVariablePicker').disabled = false; $('subscribe').disabled = false; $('disconnect').disabled = false;
   displayVariables(); displaySelectedVariables(); updateConnection(); updateDebugButtons(); renderDebugPanel(); updateRecordUi(); renderPlots(); if (switchView) setView('scope'); log(`已连接：${mock ? '模拟目标' : result.chip || result.board}，变量 ${result.variables.length} 个`, allowDebug ? 'debug' : allowFlash ? 'flash' : 'general');
   restoreWatchConfig(previousWatch);
-  if(state.selected.length) scheduleAutoSampling();
+  if(state.selected.length && !allowFlash) scheduleAutoSampling();
   if (state.debugAccess && !allowFlash) await syncAllBreakpoints();
 }
 function receiveSamples(batch) {
@@ -1622,7 +1623,12 @@ $('scopeMock').onclick = () => perform(() => connect(true, false));
 $('scopeAttach').onclick = () => perform(() => connect(false, false));
 $('scopeWriteConnect').onclick = () => perform(() => connect(false, false, true));
 function buildBeforeConnect() { return state.projectProfile?.target.buildBeforeDebug || (!!state.projectRoot && !state.projectProfile?.target.elf); }
+let flashInProgress = false;
 async function flashCurrent() {
+  if (flashInProgress) return;
+  flashInProgress = true; updateDebugButtons();
+  clearTimeout(autoSampleTimer);
+  try {
   if (!(await confirmAction(`烧录 ${state.projectProfile?.target.elf || state.preset} 的 ELF，随后复位目标板？`))) return;
   const motorDemo = state.config.params?.value?.test?.auto_run_on_boot && state.config.params?.value?.test?.motor_demo;
   if (motorDemo && !(await confirmAction('当前配置启用了 motor_demo，复位后可能驱动电机。确认继续？'))) return;
@@ -1630,7 +1636,9 @@ async function flashCurrent() {
   activateTerminal('flash');
   await connect(false, true, false, false);
   await api('/api/flash', { preset: state.preset, ackMotorMotion: !!motorDemo });
-  log('烧录及校验完成', 'flash');
+  resetConnectionUI();
+  log('烧录及校验完成，目标已复位并启动，烧录连接已释放', 'flash');
+  } finally { flashInProgress = false; updateDebugButtons(); }
 }
 $('flash').onclick = () => perform(flashCurrent);
 $('quickFlash').onclick = () => perform(flashCurrent);
@@ -1664,8 +1672,8 @@ let autoSampleTimer, samplingUpdate = Promise.resolve();
 function scheduleAutoSampling() {
   clearTimeout(autoSampleTimer);
   autoSampleTimer = setTimeout(() => {
-    if (!state.connected) return;
-    samplingUpdate = samplingUpdate.catch(() => {}).then(() => state.connected ? applySampling() : undefined).catch(error => log(`自动采集失败：${error.message}`));
+    if (!state.connected || state.flashAccess || flashInProgress) return;
+    samplingUpdate = samplingUpdate.catch(() => {}).then(() => state.connected && !state.flashAccess && !flashInProgress ? applySampling() : undefined).catch(error => log(`自动采集失败：${error.message}`));
   }, 250);
 }
 async function applySampling() {

@@ -350,6 +350,7 @@ try {
       await document.getElementById('quickDebug').onclick();
       const debug = [...calls]; calls.length = 0;
       await document.getElementById('quickFlash').onclick();
+      if(state.connected || state.debugAccess || !document.getElementById('quickStop').disabled) throw new Error('Flash left a debug session active');
       const flash = [...calls]; calls.length = 0;
       window.fetch = (input, init) => {
         if (input === '/api/build') { calls.push('build'); return Promise.resolve(new Response(JSON.stringify({ error: 'fixture build failed' }),
@@ -810,6 +811,16 @@ try {
   writeFileSync(path.join(root,'.cache','electron-ui-light.png'),Buffer.from(lightImage.data,'base64'));
   await evaluate("document.getElementById('themeToggle').click()");
   assert.equal(await evaluate("document.documentElement.dataset.theme"),'dark');
+  const flashEvents = await evaluate(`(async () => {
+    const previousFetch=window.fetch; let reads=0;
+    window.fetch=(...args)=>{reads++; return previousFetch(...args);};
+    try {
+      state.debugAccess=false; state.flashAccess=true;
+      await handleDebugEvent({event:'stopped',reason:'flash'});
+      return {reads,paused:state.debugPaused};
+    } finally {window.fetch=previousFetch;state.flashAccess=false;}
+  })()`);
+  assert.deepEqual(flashEvents,{reads:0,paused:false});
   const allPause = await evaluate(`(async () => {
     await connect(true,false); state.selected=state.variables.slice(0,2).map(v=>v.id); await applySampling();
     await new Promise(resolve=>setTimeout(resolve,200));

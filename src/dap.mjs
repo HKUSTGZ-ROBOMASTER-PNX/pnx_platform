@@ -189,6 +189,13 @@ export class DapSession {
     return this.request(`${this.prefix}/flash`, { path: elf, verify: true, resetAfter: true }, 120000);
   }
 
+  async flashAndRun(elf) {
+    // Flash resets and halts for verification; standalone programming must run
+    // the reset image before releasing the probe.
+    await this.flash(elf);
+    await this.debug('continue');
+  }
+
   async stop() {
     if (this.stopping) return this.stopping;
     this.stopping = (async () => {

@@ -345,7 +345,7 @@ async function connectSession(input) {
     const candidate = new DapSession(
       batch => { if (session === candidate) onBatch(batch); },
       message => { if (session === candidate) status(message); },
-      (event, data) => { if (session === candidate) sendEvent('debug', { event, ...data }); },
+      (event, data) => { if (session === candidate && input.allowDebug === true && input.allowFlash !== true) sendEvent('debug', { event, ...data }); },
     );
     session = candidate;
     try {
@@ -368,7 +368,7 @@ async function connectSession(input) {
       await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
-  next.meta = { board, preset: input.preset, mock, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true || input.allowFlash === true,
+  next.meta = { board, preset: input.preset, mock, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true && input.allowFlash !== true,
     elfPath: elf,
     elfHash: elf ? hashFile(elf) : undefined,
     paramsHash: mock || !projectRoot || !board ? undefined : currentConfig(board).params.hash,
@@ -540,6 +540,7 @@ async function route(req, res) {
   }
   if (url.pathname === '/api/subscribe' && req.method === 'POST') {
     if (!session) throw new Error('Connect first');
+    if (session.meta?.allowFlash) throw new Error('Sampling is disabled in a programming session');
     await stopRecording();
     const valid = new Set(flatten(catalog).map(value => value.id));
     const requested = [...new Set(input.ids || [])].filter(id => valid.has(id));
@@ -581,6 +582,7 @@ async function route(req, res) {
   }
   if (url.pathname === '/api/debug/snapshot' && req.method === 'POST') {
     if (!session || session.closed) throw new Error('Connect a target first');
+    if (session.meta?.allowFlash) throw new Error('Inspection is disabled in a programming session');
     const ids = input.ids ?? [];
     if (!Array.isArray(ids) || ids.length > 40 || ids.some(id => typeof id !== 'string')) throw new Error('Invalid diagnostic variables');
     const allowed = new Set(globalScalars(catalog).map(item => item.id));
@@ -601,6 +603,7 @@ async function route(req, res) {
     json(res, 200, result); return;
   }
   if (url.pathname === '/api/flash' && req.method === 'POST') {
+    await serializeSession(async () => {
     if (!session || session.meta?.mock || !session.meta?.allowFlash) throw new Error('Connect to a real board with flash access first');
     if (input.preset !== session.meta.preset) throw new Error('Selected preset differs from active probe session; reconnect first');
     const board = session.meta.board;
@@ -610,8 +613,10 @@ async function route(req, res) {
     if (!existsSync(elf)) throw new Error('Build the selected preset first');
     if (hashFile(elf) !== session.meta.elfHash || (projectRoot && board && (currentConfig(board).params.hash !== session.meta.paramsHash || currentConfig(board).robot.hash !== session.meta.robotHash)))
       throw new Error('ELF or configuration changed after connection; reconnect to use the new artifact');
-    await session.flash(elf);
-    json(res, 200, { ok: true }); return;
+    await session.flashAndRun(elf);
+    await stopSession();
+    });
+    json(res, 200, { ok: true, running: true, disconnected: true }); return;
   }
   if (url.pathname === '/api/disconnect' && req.method === 'POST') { await serializeSession(stopSession); json(res, 200, { ok: true }); return; }
   if (url.pathname === '/api/serial-test' && req.method === 'POST') {
