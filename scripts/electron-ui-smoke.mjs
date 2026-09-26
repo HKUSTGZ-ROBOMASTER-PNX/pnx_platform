@@ -752,7 +752,7 @@ try {
     // Windows desktops after Emulation.setDeviceMetricsOverride. The hit test
     // above checks the visible handle; dispatch pointer events in the renderer
     // so the resize behavior is deterministic on every runner.
-    sidebarResize = await evaluate(`(() => {
+    sidebarResize = await evaluate(`(async () => {
       const handle=document.getElementById('scopeResize');
       handle.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientX:${sidebarDrag.x},clientY:${sidebarDrag.y}}));
       const active=handle.classList.contains('resizing');
@@ -760,8 +760,10 @@ try {
       const afterMove=document.getElementById('scopeSidebar').getBoundingClientRect().width;
       const cssWidth=document.getElementById('desktopShell').style.getPropertyValue('--scope-sidebar-width');
       window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       return {width:document.getElementById('scopeSidebar').getBoundingClientRect().width,
-        afterMove,cssWidth,active,windowWidth:innerWidth,view:document.body.dataset.view};
+        afterMove,cssWidth,active,windowWidth:innerWidth,view:document.body.dataset.view,
+        gridColumns:getComputedStyle(document.getElementById('desktopShell')).gridTemplateColumns};
     })()`);
     assert.ok(sidebarResize.width>=sidebarDrag.before+60,
       `Resize did not move: before=${sidebarDrag.before}, result=${JSON.stringify(sidebarResize)}`);
