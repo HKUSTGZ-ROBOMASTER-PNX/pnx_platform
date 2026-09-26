@@ -47,3 +47,9 @@ node scripts/electron-ui-smoke.mjs <PnX-Platform.exe 路径>
 ```
 
 前者验证空工作区启动、文件夹选择入口和内置模拟后端；后者验证编辑器、配置和曲线交互。硬件压力测试脚本为 `scripts/stlink-stress.mjs`，只读采样，不执行烧录或电机控制。
+
+## GitHub Actions 发布
+
+`.github/workflows/release.yml` 在推送 `vMAJOR.MINOR.PATCH` 标签时构建 Windows x64 安装 EXE、便携 ZIP 与 `SHA256SUMS.txt`，测试通过后创建 GitHub Release。构建仅使用本仓库，所需 Rust、MinGW 和 Electron 由 runner 安装；Electron 下载校验 SHA256。
+
+首次启用时，先提交并推送 workflow 到默认分支。在 Actions → Build and publish release → Run workflow 中输入已有标签（如 `v0.2.12`）即可补发；构建会检出该标签的代码并核对版本。以后新版本提交后推送新标签即可触发。重跑已有 Release 会更新同名附件。发布 job 使用仓库自带的 `GITHUB_TOKEN`，无需个人 token；仓库需允许 GitHub Actions 运行。

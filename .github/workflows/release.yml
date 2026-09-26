@@ -1,0 +1,119 @@
+name: Build and publish release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag (for example v0.2.12)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      PNX_NATIVE_TARGET: x86_64-pc-windows-gnu
+    steps:
+      - name: Validate tag
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw 'Expected a vMAJOR.MINOR.PATCH tag' }
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
+      - name: Configure Rust and native linker
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+          rustup default stable-x86_64-pc-windows-gnu
+          '${{ steps.msys2.outputs.msys2-location }}\mingw64\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Check version and run unit tests
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne $env:RELEASE_TAG) { throw 'Tag and package version differ' }
+          if (-not (Select-String -Path native/Cargo.toml -SimpleMatch "version = `"$version`"")) { throw 'Rust and application versions differ' }
+          node --test test/*.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
+      - name: Download verified Electron runtime
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).devDependencies.electron
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Electron must be pinned' }
+          $name = "electron-v$version-win32-x64.zip"
+          $cache = Join-Path $env:LOCALAPPDATA 'electron\Cache'
+          New-Item -ItemType Directory -Force $cache | Out-Null
+          $url = "https://github.com/electron/electron/releases/download/v$version"
+          Invoke-WebRequest "$url/$name" -OutFile (Join-Path $cache $name)
+          $sums = (Invoke-WebRequest "$url/SHASUMS256.txt").Content
+          $line = ($sums -split "`n" | Where-Object { $_.Trim().EndsWith(" $name") })
+          if (@($line).Count -ne 1) { throw 'Missing Electron checksum' }
+          $expected = ($line.Trim() -split '\s+')[0]
+          if ((Get-FileHash (Join-Path $cache $name) -Algorithm SHA256).Hash -ne $expected) { throw 'Electron checksum mismatch' }
+          "ELECTRON_VERSION=$version" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build standalone application
+        run: ./scripts/package-electron-win.ps1 -ElectronVersion $env:ELECTRON_VERSION -OutputName 'PnX-Platform-electron-win32-x64'
+      - name: Smoke test packaged application
+        run: |
+          node scripts/electron-ui-smoke.mjs dist/PnX-Platform-electron-win32-x64/PnX-Platform.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged UI smoke test failed' }
+      - name: Build installer and checksums
+        run: |
+          ./scripts/package-release-win.ps1 -PackageDir dist/PnX-Platform-electron-win32-x64
+          Get-ChildItem dist/release -File | Where-Object Extension -in '.exe','.zip' | ForEach-Object {
+            "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() )  $($_.Name)"
+          } | Set-Content dist/release/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pnx-platform-windows
+          path: |
+            dist/release/*.exe
+            dist/release/*.zip
+            dist/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pnx-platform-windows
+          path: artifacts
+      - name: Create or update release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" artifacts/* --clobber
+          else
+            gh release create "$RELEASE_TAG" artifacts/* --title "PnX Platform $RELEASE_TAG" --generate-notes --verify-tag
+          fi
+          gh release view "$RELEASE_TAG" --json url,assets
