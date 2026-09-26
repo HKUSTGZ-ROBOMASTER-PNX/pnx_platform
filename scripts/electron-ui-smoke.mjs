@@ -954,12 +954,14 @@ try {
   assert.match(largeSearch.reason,/只读采样/); assert.deepEqual(largeSearch.match,['perf-31999']);
   console.log('Large catalog search:',JSON.stringify(largeSearch));
 
-  await evaluate('window.close()');
+  // Reply to DevTools before closing its target; otherwise the pending CDP
+  // request can remain unresolved when the window destroys its own socket.
+  await evaluate('setTimeout(() => window.close(), 50); true');
   closedByTest = true;
 } finally {
   if (!closedByTest && evaluate && ws?.readyState === WebSocket.OPEN) {
     try { await Promise.race([evaluate('disconnect().catch(() => {})'), pause(2500)]); } catch { /* Best effort. */ }
-    try { await Promise.race([evaluate('window.close()'), pause(2500)]); } catch { /* Best effort. */ }
+    try { await Promise.race([evaluate('setTimeout(() => window.close(), 50); true'), pause(2500)]); } catch { /* Best effort. */ }
   }
   ws?.close();
   if (child.exitCode === null) {
