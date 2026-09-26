@@ -69,13 +69,32 @@ export function definitionsInText(text, name, file) {
     } else if (/\b(?:extern|static|inline|constexpr|const|volatile|unsigned|signed|long|short|auto|[A-Za-z_]\w*)\s+(?:[*&]\s*)?$/.test(before) && /^\s*(?:=|;|\[)/.test(after)) {
       kind = '变量'; rank = 2;
     }
-    if (kind) matches.push({ path: file, line: lineAt(code, offset), column: offset - start + 1, kind, rank, preview: lineText });
+    if (kind) matches.push({ path: file, line: lineAt(code, offset), column: offset - start + 1, kind, rank, qualifiedName: qualifiedAt(code, offset, name), preview: lineText });
   }
   return matches;
 }
 
+function qualifiedAt(code, offset, name) {
+  const stack = []; let boundary = 0;
+  for (let i = 0; i < offset; i++) {
+    if (code[i] === '{') {
+      const prefix = code.slice(boundary, i);
+      const scope = prefix.match(/\b(?:namespace|class|struct|union)\s+([A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)[^;{}]*$/);
+      stack.push(scope ? scope[1].replace(/\s/g, '') : ''); boundary = i + 1;
+    } else if (code[i] === '}') { stack.pop(); boundary = i + 1; }
+    else if (code[i] === ';') boundary = i + 1;
+  }
+  const explicit = code.slice(0, offset).match(/(?:::)?(?:[A-Za-z_]\w*\s*::\s*)+$/)?.[0]?.replace(/\s/g, '') || '';
+  const enclosing = stack.filter(Boolean).join('::');
+  if (explicit.startsWith('::')) return explicit.slice(2) + name;
+  if (enclosing && explicit.startsWith(enclosing + '::')) return explicit + name;
+  return (enclosing ? enclosing + '::' : '') + explicit + name;
+}
+
 export async function findDefinitions(workspace, name, overrides = {}) {
-  if (!/^[A-Za-z_]\w*$/.test(name)) throw new Error('Select a C/C++ identifier');
+  if (!/^(?:::)?[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*$/.test(name)) throw new Error('Select a C/C++ identifier');
+  const qualified = name.replace(/^::/, ''), absolute = name.startsWith('::');
+  const leaf = qualified.split('::').at(-1);
   if (!workspace.root) throw new Error('Open a folder first');
   const files = [];
   const visit = async relative => {
@@ -99,9 +118,13 @@ export async function findDefinitions(workspace, name, overrides = {}) {
         if ((await stat(full)).size > MAX_BYTES) return [];
         source = await readFile(full, 'utf8');
       }
-      return source.length > MAX_BYTES || !source.includes(name) ? [] : definitionsInText(source, name, rel);
+      return source.length > MAX_BYTES || !source.includes(leaf) ? [] : definitionsInText(source, leaf, rel);
     })));
   }
-  const results = groups.flat();
+  let results = groups.flat();
+  if (qualified.includes('::') || absolute) {
+    const exact = results.filter(item => item.qualifiedName === qualified);
+    results = exact.length || absolute ? exact : results.filter(item => item.qualifiedName.endsWith('::' + qualified));
+  }
   return results.sort((a, b) => a.rank - b.rank || a.path.localeCompare(b.path) || a.line - b.line).slice(0, 50);
 }

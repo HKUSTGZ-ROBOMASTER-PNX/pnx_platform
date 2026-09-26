@@ -35,3 +35,15 @@ test('workspace lookup searches source files and uses unsaved editor text', asyn
   assert.equal(found[0].kind, '函数定义');
   assert.equal(found[0].preview, 'void drive() {');
 });
+
+test('qualified lookup keeps methods in their owning class and namespace', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pnx-qualified-'));
+  writeFileSync(path.join(root, 'motor.cpp'), 'namespace pnx {\nclass Motor {\nvoid run();\n};\nvoid Motor::run() {}\n}\nnamespace other {\nvoid Motor::run() {}\n}\nvoid run() {}');
+  const workspace = new Workspace(root);
+  const found = await findDefinitions(workspace, 'pnx::Motor::run');
+  assert.equal(found.length, 2);
+  assert.ok(found.every(item => item.qualifiedName === 'pnx::Motor::run'));
+  assert.equal(found[0].kind, '函数定义');
+  assert.equal((await findDefinitions(workspace, 'Missing::run')).length, 0);
+  assert.equal((await findDefinitions(workspace, '::run')).length, 1);
+});

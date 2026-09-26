@@ -265,11 +265,17 @@ try {
     try {
       state.debugAccess = true; await syncBreakpoints('first.cpp');
       const verified = state.breakpointResults.get('first.cpp').get(1).verified;
-      state.debugAccess = false; await toggleBreakpoint('first.cpp', 1);
+      state.debugPaused = true; state.stoppedAt = {path:'first.cpp',line:2};
+      state.breakpointResults.get('first.cpp').set(1,{verified:true,line:2});
+      renderBreakpointGutter();
+      const pausedButton = [...document.querySelectorAll('.breakpoint-line')].find(button=>button.textContent==='2');
+      await pausedButton.onclick();
+      if(!state.debugPaused || !pausedButton.classList.contains('has-breakpoint')) throw new Error('Paused breakpoint fixture failed');
+      state.debugAccess = false; state.debugPaused = false; state.stoppedAt = null;
       return { visible, saved, calls, verified, removed: !state.breakpoints.get('first.cpp').has(1) };
     } finally { state.debugAccess = false; window.fetch = originalFetch; }
   })()`);
-  assert.deepEqual(breakpoints, { visible: true, saved: [1], calls: [{ path: 'first.cpp', lines: [1] }], verified: true, removed: true });
+  assert.deepEqual(breakpoints, { visible: true, saved: [1], calls: [{ path: 'first.cpp', lines: [1] }, { path: 'first.cpp', lines: [] }], verified: true, removed: true });
 
   await evaluate(`(async () => {
     const selected = await api('/api/workspace/open', { folder: ${JSON.stringify(originalProject)} });

@@ -268,10 +268,15 @@ async function goToDefinition() {
   if (!state.file) return;
   const name = wordAtCursor();
   if (!name) { $('status').textContent = '请将光标放在 C/C++ 标识符上'; return; }
-  const result = await api('/api/workspace/definitions', { name, overrides: dirtyEditorOverrides() });
+  const editor = $('codeEditor');
+  let start = editor.selectionStart;
+  while (start > 0 && /[A-Za-z_0-9]/.test(editor.value[start - 1])) start--;
+  const qualifier = editor.value.slice(0, start).match(/(?:::)?(?:[A-Za-z_]\w*\s*::\s*)+$/)?.[0] || '';
+  const result = await api('/api/workspace/definitions', { name: qualifier.replace(/\s/g, '') + name, overrides: dirtyEditorOverrides() });
   if (!result.matches.length) { $('status').textContent = `未找到 ${name} 的定义`; return; }
   const definitions = result.matches.filter(item => item.rank < 3);
-  if (definitions.length === 1 || result.matches.length === 1) { await navigateTo({ ...(definitions[0] || result.matches[0]), length: name.length }); return; }
+  const owners = new Set(result.matches.map(item => item.qualifiedName));
+  if ((definitions.length === 1 && owners.size === 1) || result.matches.length === 1) { await navigateTo({ ...(definitions[0] || result.matches[0]), length: name.length }); return; }
   $('definitionTitle').textContent = `跳转到 ${name} 的定义`;
   $('definitionHint').textContent = `找到 ${result.matches.length} 个候选位置。请选择要打开的位置。`;
   $('definitionResults').replaceChildren(...result.matches.map(item => {
@@ -355,14 +360,15 @@ function renderBreakpointGutter() {
     const line = first + index, button = document.createElement('button');
     button.type = 'button'; button.className = 'breakpoint-line'; button.textContent = String(line);
     button.style.top = `${22 + (line - 1) * rowHeight - editor.scrollTop}px`;
-    const result = state.breakpointResults.get(state.file.path)?.get(line);
-    button.classList.toggle('has-breakpoint', lines.has(line));
-    button.classList.toggle('unverified', lines.has(line) && !state.debugAccess);
-    button.classList.toggle('rejected', lines.has(line) && state.debugAccess && result?.verified === false);
+    const owners = breakpointOwners(state.file.path, line);
+    const hasBreakpoint = owners.length > 0;
+    const result = state.breakpointResults.get(state.file.path)?.get(owners[0]);
+    button.classList.toggle('has-breakpoint', hasBreakpoint);
+    button.classList.toggle('unverified', hasBreakpoint && !state.debugAccess);
+    button.classList.toggle('rejected', hasBreakpoint && state.debugAccess && result?.verified === false);
     const current = state.debugPaused && state.stoppedAt?.path === state.file.path && state.stoppedAt.line === line;
     button.classList.toggle('current-execution', current);
-    button.title = current ? `当前停在第 ${line} 行 · ${state.debugReason || '已暂停'}`
-      : lines.has(line) ? result?.message || `移除第 ${line} 行断点` : `设置第 ${line} 行断点`;
+    button.title = `${hasBreakpoint ? `移除第 ${line} 行断点` : `设置第 ${line} 行断点`}${current ? ' · 当前执行位置（移除断点后仍保持暂停）' : ''}`;
     button.setAttribute('aria-label', button.title);
     button.onclick = () => perform(() => toggleBreakpoint(state.file.path, line));
     return button;
@@ -383,12 +389,21 @@ async function syncAllBreakpoints() {
     try { await syncBreakpoints(file); } catch (error) { log(`${file}: 断点下发失败：${error.message}`, 'debug'); }
   }
 }
-async function toggleBreakpoint(file, line) {
+function breakpointOwners(file, line) {
+  return [...(state.breakpoints.get(file) || [])].filter(requested => requested === line || state.breakpointResults.get(file)?.get(requested)?.line === line);
+}
+let breakpointUpdate = Promise.resolve();
+function toggleBreakpoint(file, line) {
+  const update = breakpointUpdate.catch(() => {}).then(() => updateBreakpoint(file, line));
+  breakpointUpdate = update; return update;
+}
+async function updateBreakpoint(file, line) {
   if (!/\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$/i.test(file)) return;
   const lines = state.breakpoints.get(file) || new Set();
-  if (!lines.has(line) && lines.size >= 64) throw new Error('每个文件最多设置 64 个断点');
-  if (state.debugAccess && state.file?.path === file && fileDirty()) { await saveFileEntry(state.file); updateEditor(); }
-  if (lines.has(line)) lines.delete(line); else lines.add(line);
+  const owners = breakpointOwners(file, line);
+  if (!owners.length && lines.size >= 64) throw new Error('每个文件最多设置 64 个断点');
+  if (!owners.length && state.debugAccess && state.file?.path === file && fileDirty()) { await saveFileEntry(state.file); updateEditor(); }
+  if (owners.length) owners.forEach(owner => lines.delete(owner)); else lines.add(line);
   state.breakpoints.set(file, lines); state.breakpointResults.delete(file); saveBreakpoints(); renderBreakpointGutter();
   if (state.debugAccess) await syncBreakpoints(file);
 }

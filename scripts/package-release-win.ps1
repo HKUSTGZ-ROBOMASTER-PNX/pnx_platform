@@ -31,3 +31,18 @@ try { $digest = [System.BitConverter]::ToString($sha.ComputeHash($stream)).Repla
 finally { $stream.Dispose(); $sha.Dispose() }
 Write-Output "SHA256 $digest  $setup"
 Write-Output "Release assets: $setup ; $payload"
+$newVersion = [version](Get-Content -LiteralPath (Join-Path $package 'resources\app\package.json') -Raw | ConvertFrom-Json).version
+foreach ($candidate in Get-ChildItem -LiteralPath $dist -Directory -Filter 'PnX-Platform-electron-win32-x64*') {
+  $oldPath = [IO.Path]::GetFullPath($candidate.FullName)
+  if ($oldPath -eq $package -or -not $oldPath.StartsWith($dist + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { continue }
+  $manifest = Join-Path $oldPath 'resources\app\package.json'
+  if (-not (Test-Path -LiteralPath $manifest)) { continue }
+  try { $oldVersion = [version](Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json).version } catch { continue }
+  if ($oldVersion -ge $newVersion) { continue }
+  $running = @(Get-Process -Name 'PnX-Platform','pnx-dap' -ErrorAction SilentlyContinue | Where-Object { -not $_.Path -or $_.Path.StartsWith($oldPath + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) })
+  if ($running.Count) { Write-Output "Kept running package: $oldPath"; continue }
+  $links = @($candidate) + @(Get-ChildItem -LiteralPath $oldPath -Recurse -Force)
+  if ($links | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) { Write-Output "Kept package containing filesystem links: $oldPath"; continue }
+  Remove-Item -LiteralPath $oldPath -Recurse -Force
+  Write-Output "Removed old package: $oldPath"
+}
