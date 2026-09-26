@@ -5,6 +5,23 @@ import path from 'node:path';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { scanToolchain, validateToolchain, toolchainPathDirectories, useToolchain, saveToolchain, loadToolchain } from '../src/toolchain.mjs';
 
+test('Unix tool lookup rejects same-named directories on every host', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pnx-unix-tools-'));
+  try {
+    for (const name of ['cmake', 'ninja']) {
+      mkdirSync(path.join(root, name, 'bin'), { recursive: true });
+      writeFileSync(path.join(root, name, 'bin', name), 'fixture');
+    }
+    for (const platform of ['linux', 'darwin']) {
+      const result = scanToolchain({ platform, env: {}, roots: [root] });
+      assert.equal(result.tools.cmake.directory, path.join(root, 'cmake', 'bin'));
+      assert.equal(result.tools.ninja.directory, path.join(root, 'ninja', 'bin'));
+    }
+  } finally {
+    if (path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep)) rmSync(root, { recursive: true });
+  }
+});
+
 test('toolchain setup checks PATH, scans folders, and persists app configuration', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pnx-toolchain-test-'));
   try {

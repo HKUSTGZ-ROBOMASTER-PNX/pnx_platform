@@ -88,6 +88,14 @@ jobs:
             "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() )  $($_.Name)"
           } | Set-Content dist/release/SHA256SUMS.txt -Encoding ascii
       - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diagnostics-windows
+          path: |
+            .cache/**/desktop.log
+            .cache/electron-ui-*.png
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
         with:
           name: pnx-platform-windows
           path: |
@@ -151,6 +159,14 @@ jobs:
       - name: Verify and archive macOS application
         if: runner.os == 'macOS'
         run: node scripts/release-host.mjs
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diagnostics-${{ matrix.asset }}
+          path: |
+            .cache/**/desktop.log
+            .cache/electron-ui-*.png
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: pnx-platform-${{ matrix.asset }}

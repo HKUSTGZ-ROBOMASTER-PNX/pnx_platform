@@ -1,7 +1,7 @@
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, statSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 
 export const TOOL_NAMES = ['cmake', 'ninja', 'arm'];
 const armBinaries = ['arm-none-eabi-gcc', 'arm-none-eabi-g++', 'arm-none-eabi-objcopy', 'arm-none-eabi-objdump', 'arm-none-eabi-readelf', 'arm-none-eabi-size'];
@@ -10,7 +10,10 @@ const binary = (name, platform) => `${name}${platform === 'win32' ? '.exe' : ''}
 
 function matchesTool(directory, name, platform) {
   const files = name === 'arm' ? armBinaries : [name];
-  return files.every(file => existsSync(path.join(directory, binary(file, platform))));
+  return files.every(file => {
+    try { return statSync(path.join(directory, binary(file, platform))).isFile(); }
+    catch { return false; }
+  });
 }
 function uniquePaths(values, platform) {
   const seen = new Set();
