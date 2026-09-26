@@ -728,6 +728,25 @@ try {
   assert.match(driverChecks[2].text, /无法确定/);
   assert.match(driverChecks[3].text, /未检测到/);
   assert.ok(driverChecks.every(item => item.enabled && item.link === 'https://www.st.com/en/development-tools/stsw-link009.html'));
+  const groupChecks = await evaluate(`(async () => {
+    const original = state.activePlotGroup;
+    document.getElementById('addPlotGroup').click();
+    const dialog = [...document.querySelectorAll('dialog[open]')].at(-1);
+    dialog.querySelector('input').value = 'IMU'; dialog.close('save');
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const created = state.activePlotGroup !== original && document.getElementById('plotGrid').children.length === 1;
+    const id = state.activePlotGroup;
+    document.getElementById('addPlot').click();
+    const multiple = document.getElementById('plotGrid').children.length === 2;
+    document.querySelector('#plotGroups button').click();
+    const switched = state.activePlotGroup === original && [...document.getElementById('plotGrid').children].every(card => state.plots.find(plot => plot.id === card.dataset.plotId).groupId !== id);
+    const row = document.querySelector('.selected-variable-row');
+    row?.querySelector('.selected-variable-top').click();
+    const actions = !row || getComputedStyle(row.querySelector('.selected-variable-actions')).display === 'flex';
+    return {created, multiple, switched, actions};
+  })()`);
+  assert.deepEqual(groupChecks, {created:true, multiple:true, switched:true, actions:true});
+  console.log('Curve group switching and variable actions passed');
   console.log('ST-Link driver UI checks passed');
   await evaluate('window.close()');
   closedByTest = true;

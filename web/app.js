@@ -4,7 +4,7 @@ const colors = ['#5ee1a8','#ffbd69','#6db6ff','#ff7397','#bb9aff','#f0e07b','#6d
 const BANK_CHANNELS = 256;
 const PLOT_PAGE_SIZE = 64;
 const state = { board: 'h723_mc02', preset: 'h723-debug', config: {}, hardware: {}, variables: [], selected: [], activeIds: [], activeIndex: new Map(), points: [], latest: [], series: new Map(), latestById: new Map(), latestAtById: new Map(), firstTimestampNs: null, lastTimestampNs: 0, banks: 1, bankSize: BANK_CHANNELS, bankDwellMs: 0, streamEpoch: null, sampleCount: 0, droppedFrames: 0, rateWindow: [], lastSampleAt: 0, connected: false, flashAccess: false,
-  debugAccess: false, debugPaused: false, debugReason: '', stoppedAt: null, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
+  debugAccess: false, debugPaused: false, debugReason: '', stoppedAt: null, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plotGroups: [{ id: 'default', name: '默认组' }], activePlotGroup: 'default', plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
   observedValues: new Map(), valueChangedAt: new Map(), valueSeenAt: new Map(), recording: false, recordFile: null, recordRows: 0, recordError: null, missingTools: [] };
 async function api(route, data) {
   const response = await fetch(route, { method: data === undefined ? 'GET' : 'POST', headers: { 'X-PnX-Token': token, 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
@@ -680,7 +680,7 @@ function displayVariables() {
       box.onchange = () => changeVariableSelection([node.id], box.checked);
       const swatch = document.createElement('i'); swatch.className = 'variable-swatch'; swatch.style.background = box.checked ? colors[state.selected.indexOf(node.id) % colors.length] : '#596575';
       const name = document.createElement('span'); name.className = 'variable-name'; name.textContent = node.name || variable.name; name.title = node.expression || variable.name; label.append(box, swatch, name);
-      if (box.checked) { const destination = document.createElement('select'); destination.setAttribute('aria-label', `${variable.name} 所在曲线`); destination.replaceChildren(option('watch-only', '仅查看 / 修改'), ...state.plots.map(plot => option(plot.id, plot.name))); destination.value = state.plotAssignments.get(node.id) || state.plots[0].id; destination.onclick = event => event.stopPropagation(); destination.onchange = () => { state.plotAssignments.set(node.id, destination.value); renderPlots(); savePlotLayout(); }; label.append(destination); }
+      if (box.checked) { const destination = document.createElement('select'); destination.setAttribute('aria-label', `${variable.name} 所在曲线`); destination.replaceChildren(option('watch-only', '仅查看 / 修改'), ...state.plots.map(plot => option(plot.id, plotGroupLabel(plot)))); destination.value = state.plotAssignments.get(node.id) || state.plots[0].id; destination.onclick = event => event.stopPropagation(); destination.onchange = () => { state.plotAssignments.set(node.id, destination.value); renderPlots(); savePlotLayout(); }; label.append(destination); }
       if (variable.writable && state.debugAccess) { const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'variable-write'; edit.textContent = '✎'; edit.title = `修改 ${variable.name} (${variable.type})`; edit.setAttribute('aria-label', edit.title); edit.onclick = event => { event.preventDefault(); event.stopPropagation(); openVariableWrite(variable); }; label.append(edit); }
       return label;
     }
@@ -724,10 +724,15 @@ function displaySelectedVariables() {
     top.append(swatch, name, value);
     const actions = document.createElement('div'); actions.className = 'selected-variable-actions';
     const destination = document.createElement('select'); destination.setAttribute('aria-label', `${variable.name} 所在曲线`);
-    destination.replaceChildren(option('watch-only', '仅查看 / 修改'), ...state.plots.map(plot => option(plot.id, plot.name)));
+    destination.replaceChildren(option('watch-only', '仅查看 / 修改'), ...state.plots.map(plot => option(plot.id, plotGroupLabel(plot))));
     destination.value = state.plotAssignments.get(id) || state.plots[0].id;
     destination.onchange = () => { state.plotAssignments.set(id, destination.value); renderPlots(); displayVariables(); savePlotLayout(); };
     actions.append(destination);
+    row.tabIndex = 0; row.title = `${variable.name}：点击展开曲线分配与读写操作`;
+    const expandActions = () => { const expanded = row.classList.toggle('editing'); row.setAttribute('aria-expanded', String(expanded)); };
+    row.setAttribute('aria-expanded', 'false');
+    top.onclick = expandActions;
+    row.onkeydown = event => { if (event.target === row && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); expandActions(); } };
     const read = document.createElement('button'); read.textContent = '读取'; read.title = '读取当前值，不订阅曲线';
     read.onclick = () => perform(() => readWatchValues([id])); actions.append(read);
     if (variable.writable && state.debugAccess) {
@@ -809,7 +814,7 @@ function plotView(id) {
   if (!state.plotViews.has(id)) state.plotViews.set(id, { seconds: timeWindowSeconds($('plotTimeWindow').value), paused: false, anchorNs: null, snapshot: null });
   return state.plotViews.get(id);
 }
-function savePlotLayout() { try { localStorage.setItem('pnx-plots', JSON.stringify({ plots: state.plots, assignments: [...state.plotAssignments], columns: $('plotColumns').value, seconds: timeWindowSeconds($('plotTimeWindow').value), windows: [...state.plotViews].map(([id, view]) => [id, view.seconds]) })); } catch { /* Storage can be disabled. */ } }
+function savePlotLayout() { try { localStorage.setItem('pnx-plots', JSON.stringify({ groups: state.plotGroups, activeGroup: state.activePlotGroup, plots: state.plots, assignments: [...state.plotAssignments], columns: $('plotColumns').value, seconds: timeWindowSeconds($('plotTimeWindow').value), windows: [...state.plotViews].map(([id, view]) => [id, view.seconds]) })); } catch { /* Storage can be disabled. */ } }
 function resetPlotViews() {
   for (const view of state.plotViews.values()) { view.paused = false; view.anchorNs = null; view.snapshot = null; }
 }
@@ -882,9 +887,21 @@ function reorderPlot(sourceId, targetId) {
   state.plots.splice(to, 0, ...state.plots.splice(from, 1));
   renderPlots(); savePlotLayout();
 }
+function plotGroupLabel(plot) { return `${state.plotGroups.find(group => group.id === (plot.groupId || 'default'))?.name || '默认组'} / ${plot.name}`; }
+function renderPlotGroups() {
+  $('plotGroups').replaceChildren(...state.plotGroups.map(group => {
+    const button = document.createElement('button'); button.textContent = group.name;
+    button.setAttribute('role', 'tab'); button.setAttribute('aria-selected', String(group.id === state.activePlotGroup));
+    button.onclick = () => { state.activePlotGroup = group.id; renderPlots(); savePlotLayout(); };
+    return button;
+  }));
+  $('removePlotGroup').disabled = state.plotGroups.length < 2;
+}
 function renderPlots() {
-  const grid = $('plotGrid'); grid.style.setProperty('--plot-columns', $('plotColumns').value); grid.dataset.count = String(state.plots.length);
-  grid.replaceChildren(...state.plots.map(plot => {
+  renderPlotGroups();
+  const visiblePlots = state.plots.filter(plot => (plot.groupId || 'default') === state.activePlotGroup);
+  const grid = $('plotGrid'); grid.style.setProperty('--plot-columns', $('plotColumns').value); grid.dataset.count = String(visiblePlots.length);
+  grid.replaceChildren(...visiblePlots.map(plot => {
     const card = document.createElement('section'); card.className = 'plot-card'; card.dataset.plotId = plot.id;
     const header = document.createElement('div'); header.className = 'plot-header';
     const title = document.createElement('strong'); title.textContent = `⠿  ${plot.name}`;
@@ -1341,7 +1358,7 @@ async function exportPlot(card) {
 async function init() {
   try { const savedView = localStorage.getItem('pnx-active-view'); setView(savedView === 'tools' ? 'config' : savedView || 'editor'); } catch { setView('editor'); }
   try { const width = Number(localStorage.getItem('pnx-scope-sidebar-width')); if (Number.isFinite(width) && width > 0) setScopeSidebarWidth(width); } catch { /* Storage can be disabled. */ }
-  try { const layout = JSON.parse(localStorage.getItem('pnx-plots') || 'null'); if (Array.isArray(layout?.plots) && layout.plots.length && layout.plots.length <= 32) { const plots = layout.plots.filter(plot => typeof plot.id === 'string' && typeof plot.name === 'string'); if (plots.length) { state.plots = plots; state.plotAssignments = new Map(Array.isArray(layout.assignments) ? layout.assignments : []); $('plotColumns').value = String(layout.columns || '2'); $('plotTimeWindow').value = String(timeWindowSeconds(layout.seconds)); if (Array.isArray(layout.windows)) for (const [id, seconds] of layout.windows) if (plots.some(plot => plot.id === id)) state.plotViews.set(id, { seconds: timeWindowSeconds(seconds), paused: false, anchorNs: null, snapshot: null }); nextPlotId = Math.max(2, ...state.plots.map(plot => Number(plot.id.replace('plot-', '')) + 1 || 2)); } } } catch { /* Ignore stale layout. */ }
+  try { const layout = JSON.parse(localStorage.getItem('pnx-plots') || 'null'); if (Array.isArray(layout?.plots) && layout.plots.length && layout.plots.length <= 32) { const plots = layout.plots.filter(plot => typeof plot.id === 'string' && typeof plot.name === 'string'); if (plots.length) { state.plots = plots; if (Array.isArray(layout.groups) && layout.groups.length) { state.plotGroups = layout.groups.filter(group => typeof group.id === 'string' && typeof group.name === 'string'); if (!state.plotGroups.length) state.plotGroups = [{id:'default',name:'默认组'}]; } state.activePlotGroup = state.plotGroups.some(group => group.id === layout.activeGroup) ? layout.activeGroup : state.plotGroups[0].id; for (const plot of plots) if (!state.plotGroups.some(group => group.id === (plot.groupId || 'default'))) plot.groupId = state.activePlotGroup; state.plotAssignments = new Map(Array.isArray(layout.assignments) ? layout.assignments : []); $('plotColumns').value = String(layout.columns || '2'); $('plotTimeWindow').value = String(timeWindowSeconds(layout.seconds)); if (Array.isArray(layout.windows)) for (const [id, seconds] of layout.windows) if (plots.some(plot => plot.id === id)) state.plotViews.set(id, { seconds: timeWindowSeconds(seconds), paused: false, anchorNs: null, snapshot: null }); nextPlotId = Math.max(2, ...state.plots.map(plot => Number(plot.id.replace('plot-', '')) + 1 || 2)); } } } catch { /* Ignore stale layout. */ }
   updateConnection(); updateDebugButtons(); updateLive(); renderPlots();
   const info = await api('/api/boards'); state.boards = info.boards;
   $('board').replaceChildren(...Object.keys(info.boards).map(value => option(value)));
@@ -1522,7 +1539,35 @@ $('subscribe').onclick = () => perform(async () => {
   $('metrics').textContent = result.ids.length ? '等待实时数据' : '尚未选择变量'; displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();
   log(`已订阅 ${result.ids.length} 个变量，${state.banks} 组采集`);
 });
-$('addPlot').onclick = () => { const id = `plot-${nextPlotId++}`; state.plots.push({ id, name: `曲线 ${state.plots.length + 1}` }); renderPlots(); displayVariables(); displaySelectedVariables(); savePlotLayout(); };
+function askPlotGroupName(initial) {
+  const dialog = document.createElement('dialog'), form = document.createElement('form'); form.method = 'dialog';
+  const label = document.createElement('label'); label.textContent = '曲线组名称';
+  const input = document.createElement('input'); input.value = initial; input.maxLength = 80; input.setAttribute('aria-label', '曲线组名称'); label.append(input);
+  const cancel = document.createElement('button'); cancel.textContent = '取消'; cancel.value = 'cancel';
+  const save = document.createElement('button'); save.textContent = '确定'; save.value = 'save';
+  form.append(label, cancel, save); dialog.append(form); document.body.append(dialog);
+  input.onkeydown = event => { if (event.key === 'Enter') {event.preventDefault(); dialog.close('save');} };
+  return new Promise(resolve => { dialog.onclose = () => { const result = dialog.returnValue === 'save' ? input.value.trim() : ''; dialog.remove(); resolve(result); }; dialog.showModal(); input.focus(); input.select(); });
+}
+$('addPlotGroup').onclick = async () => {
+  const name = await askPlotGroupName(`曲线组 ${state.plotGroups.length + 1}`); if (!name) return;
+  const id = `group-${Date.now()}`; state.plotGroups.push({id, name}); state.activePlotGroup = id;
+  $('addPlot').click();
+};
+$('renamePlotGroup').onclick = async () => {
+  const group = state.plotGroups.find(item => item.id === state.activePlotGroup);
+  const name = await askPlotGroupName(group.name); if (!name) return;
+  group.name = name; renderPlots(); displaySelectedVariables(); displayVariables(); savePlotLayout();
+};
+$('removePlotGroup').onclick = () => {
+  if (state.plotGroups.length < 2) return;
+  const id = state.activePlotGroup, group = state.plotGroups.find(item => item.id === id);
+  if (!confirm(`删除“${group.name}”？组内曲线将移到另一组，保留变量分配。`)) return;
+  state.plotGroups = state.plotGroups.filter(item => item.id !== id); state.activePlotGroup = state.plotGroups[0].id;
+  for (const plot of state.plots) if ((plot.groupId || 'default') === id) plot.groupId = state.activePlotGroup;
+  renderPlots(); displaySelectedVariables(); displayVariables(); savePlotLayout();
+};
+$('addPlot').onclick = () => { const id = `plot-${nextPlotId++}`; state.plots.push({ id, name: `曲线 ${state.plots.length + 1}`, groupId: state.activePlotGroup }); renderPlots(); displayVariables(); displaySelectedVariables(); savePlotLayout(); };
 $('plotTimeWindow').onchange = () => {
   const seconds = timeWindowSeconds($('plotTimeWindow').value); $('plotTimeWindow').value = String(seconds);
   for (const card of $('plotGrid').children) { const view = plotView(card.dataset.plotId); view.seconds = seconds; if (view.paused) view.anchorNs = clampPlotAnchor(card, view.anchorNs); refreshPlotViewbar(card); }
