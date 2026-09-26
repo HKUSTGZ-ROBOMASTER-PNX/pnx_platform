@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { packager } from '@electron/packager';
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backend = process.platform === 'win32' ? 'pnx-dap.exe' : 'pnx-dap';
@@ -22,7 +23,6 @@ try {
   mkdirSync(path.join(stage, 'bin'));
   cpSync(binary, path.join(stage, 'bin', backend));
 
-  const { default: packager } = await import('@electron/packager');
   const output = await packager({
     dir: stage, name: 'PnX Platform', electronVersion: sourcePackage.devDependencies.electron,
     appBundleId: 'org.pnx.platform',

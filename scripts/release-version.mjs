@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +10,13 @@ export function releaseFiles(root, tag) {
   const pkg = JSON.parse(readFileSync(packagePath, 'utf8'));
   pkg.version = version;
   files.set(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+  const npmLockPath = path.join(root, 'package-lock.json');
+  if (existsSync(npmLockPath)) {
+    const npmLock = JSON.parse(readFileSync(npmLockPath, 'utf8'));
+    npmLock.version = version;
+    if (npmLock.packages?.['']) npmLock.packages[''].version = version;
+    files.set(npmLockPath, JSON.stringify(npmLock, null, 2) + '\n');
+  }
   const cargoPath = path.join(root, 'native/Cargo.toml');
   const cargo = readFileSync(cargoPath, 'utf8');
   const workspaceVersion = /(\[workspace\.package\][\s\S]*?\bversion\s*=\s*)"[^"]+"/;

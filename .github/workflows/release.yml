@@ -118,7 +118,7 @@ jobs:
       - name: Package Unix application
         if: runner.os != 'Windows'
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run package:electron:host
       - name: Test and archive Linux application
         if: runner.os == 'Linux'
