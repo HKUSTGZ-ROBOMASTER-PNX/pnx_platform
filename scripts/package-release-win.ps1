@@ -23,7 +23,7 @@ try { & tar.exe -a -cf $payload .; if ($LASTEXITCODE -ne 0) { throw 'ZIP packagi
 finally { Pop-Location }
 $compiler = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compiler)) { throw '.NET Framework C# compiler unavailable; ZIP is still distributable.' }
-& $compiler /nologo /codepage:65001 /target:winexe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.IO.Compression.dll "/resource:$payload,PnXPayload.zip" "/out:$setup" (Join-Path $PSScriptRoot 'Setup.cs')
+& $compiler /nologo /codepage:65001 /target:winexe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.IO.Compression.dll "/win32icon:$(Join-Path $sourceRoot 'assets\pnx-icon.ico')" "/resource:$payload,PnXPayload.zip" "/out:$setup" (Join-Path $PSScriptRoot 'Setup.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 $sha = [System.Security.Cryptography.SHA256]::Create()
 $stream = [System.IO.File]::OpenRead($setup)

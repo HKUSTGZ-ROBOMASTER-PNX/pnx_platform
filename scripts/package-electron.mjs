@@ -17,7 +17,7 @@ try {
     name: sourcePackage.name, productName: 'PnX Platform', version: sourcePackage.version,
     private: true, type: 'module', main: 'electron/main.cjs',
   }, null, 2));
-  for (const name of ['src', 'web', 'electron', 'config']) cpSync(path.join(source, name), path.join(stage, name), { recursive: true });
+  for (const name of ['src', 'web', 'electron', 'config', 'assets']) cpSync(path.join(source, name), path.join(stage, name), { recursive: true });
   cpSync(path.join(source, 'README.md'), path.join(stage, 'README.md'));
   mkdirSync(path.join(stage, 'bin'));
   cpSync(binary, path.join(stage, 'bin', backend));
@@ -26,6 +26,7 @@ try {
   const output = await packager({
     dir: stage, name: 'PnX Platform', electronVersion: '38.8.6',
     platform: process.platform, arch: process.arch,
+    icon: path.join(source, 'assets', process.platform === 'win32' ? 'pnx-icon.ico' : process.platform === 'darwin' ? 'pnx-icon.icns' : 'pnx-icon.png'),
     out: path.join(source, 'dist'), overwrite: false, asar: false,
   });
   for (const item of output) process.stdout.write(`Packaged: ${item}\n`);
