@@ -71,11 +71,9 @@ jobs:
           New-Item -ItemType Directory -Force $cache | Out-Null
           $url = "https://github.com/electron/electron/releases/download/v$version"
           Invoke-WebRequest "$url/$name" -OutFile (Join-Path $cache $name)
-          $sums = (Invoke-WebRequest "$url/SHASUMS256.txt").Content
-          $line = ($sums -split "`n" | Where-Object { $_.Trim().EndsWith(" $name") })
-          if (@($line).Count -ne 1) { throw 'Missing Electron checksum' }
-          $expected = ($line.Trim() -split '\s+')[0]
-          if ((Get-FileHash (Join-Path $cache $name) -Algorithm SHA256).Hash -ne $expected) { throw 'Electron checksum mismatch' }
+          $checksumFile = Join-Path $cache "SHASUMS256-$version.txt"
+          Invoke-WebRequest "$url/SHASUMS256.txt" -OutFile $checksumFile
+          ./scripts/verify-electron-checksum.ps1 -Archive (Join-Path $cache $name) -ChecksumFile $checksumFile
           "ELECTRON_VERSION=$version" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
       - name: Build standalone application
         run: ./scripts/package-electron-win.ps1 -ElectronVersion $env:ELECTRON_VERSION -OutputName 'PnX-Platform-electron-win32-x64'
