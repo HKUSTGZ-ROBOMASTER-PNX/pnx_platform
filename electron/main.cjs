@@ -92,7 +92,7 @@ async function createWindow() {
   trace(`service ready: ${origin}`);
   window = new BrowserWindow({
     width: 1500, height: 950, minWidth: 850, minHeight: 650, show: false, backgroundColor: '#18202d',
-    title: 'PnX Platform',
+    title: 'PnX Platform', autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'assets', process.platform === 'win32' ? 'pnx-icon.ico' : 'pnx-icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: !windowsCompatibility },
   });

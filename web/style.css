@@ -294,3 +294,79 @@ body[data-view="editor"] #editorFooter{height:25px;font-size:11px;background:#18
 /* Scope workbench: grouped plots and compact variable watch table. */
 .plot-group-bar{display:flex;align-items:center;gap:4px;background:#181818;border-bottom:1px solid #333;padding:0 8px;min-height:34px;flex-wrap:wrap}#plotGroups{display:flex;flex:1;overflow:auto;min-width:100px}#plotGroups button{white-space:nowrap;border:0;border-radius:0;background:transparent;padding:8px 14px;color:#999}#plotGroups button[aria-selected="true"]{color:#eee;background:#242424;box-shadow:inset 0 -2px #aaa}.plot-group-bar>button{font-size:11px;padding:4px 7px;background:transparent;border:0}.selected-variable-list{padding:0 0 12px}.selected-variable-row{padding:0;margin:0;border:0;border-bottom:1px solid #2b2b2b;border-radius:0;background:transparent}.selected-variable-row:hover,.selected-variable-row.editing{background:#252526}.selected-variable-top{min-height:28px;padding:0 7px;cursor:pointer}.selected-variable-name{font-size:12px}.selected-variable-value{padding-left:8px;border-left:1px solid #333;min-width:80px;font-size:12px}.selected-variable-actions{display:none;margin:0;padding:5px 7px;border-top:1px solid #333;flex-wrap:wrap}.selected-variable-row.editing>.selected-variable-actions{display:flex}.selected-variable-actions select{max-width:100%;flex:1}.watch-branch{margin:0}.watch-branch>summary{border-radius:0;padding:4px 5px}.plot-card{border-radius:2px}.plot-grid{gap:4px}.plot-header{background:#202020}
 .selected-variable-actions{font-family:"Segoe UI","Microsoft YaHei UI",sans-serif}.selected-variable-actions button,.selected-variable-actions>.hint{display:inline-grid;place-items:center;width:24px;height:24px;font:15px/1 "Segoe UI Symbol",sans-serif;padding:0;color:#aeb4bd}.scope-properties{width:min(620px,90vw)}.scope-properties h3{font-size:15px}.scope-properties p{color:#aaa;font-size:12px}.scope-property-variables{max-height:50vh;overflow:auto;border:1px solid #333;margin:14px 0}.scope-property-variables label{display:flex;align-items:center;gap:9px;padding:6px 10px;border-bottom:1px solid #292929;font:12px Consolas,monospace}.scope-property-variables input{width:auto}
+#projectSettingsDialog{width:min(680px,90vw);max-height:85vh;overflow:auto}#projectSettingsDialog fieldset{border:1px solid #383838;border-radius:5px;margin:12px 0;padding:12px}#projectSettingsDialog label{display:block;margin:8px 0}#projectSettingsDialog input:not([type=checkbox]){display:block;width:100%;margin-top:5px}#projectSettingsDialog input[type=checkbox]{width:auto}#projectSettingsRoot{font-size:12px;overflow-wrap:anywhere;color:#aaa}
+
+.variable-write-reason{font-size:11px;color:var(--pnx-muted);white-space:normal;overflow-wrap:anywhere}.selected-variable-actions{flex-wrap:wrap}
+
+/* Compact scope toolbar: status, connection and persistence share one row. */
+#scopeArea{padding:8px 10px 6px;gap:4px}
+#scopeArea .scope-toolbar{flex:none;flex-direction:row;align-items:center;gap:6px;margin:0;flex-wrap:wrap}
+#scopeArea .scope-actions{gap:4px;align-items:center}
+#scopeArea .scope-toolbar button,#scopeArea .plot-controls button{padding:4px 7px}
+#scopeArea .connection-badge{padding:3px 7px}
+#scopeArea .scope-rate input{width:65px;padding:3px 5px}
+#scopeArea>#metrics{margin:0;font-size:10px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scope-plot-tools{display:flex;flex-wrap:wrap;align-items:center;gap:4px;flex:none;border-bottom:1px solid #333}
+.scope-plot-tools .plot-group-bar{flex:1;min-width:240px;border:0;padding:0;min-height:28px;flex-wrap:nowrap}
+.scope-plot-tools #plotGroups button{padding:5px 8px}
+.scope-plot-tools .plot-controls{margin:0;gap:5px}
+.scope-plot-tools .plot-controls label{gap:3px}
+.scope-plot-tools .plot-controls select,.scope-plot-tools .plot-controls #plotTimeWindow{padding:3px 5px}
+.scope-more{position:relative}.scope-more summary{cursor:pointer;padding:1px 9px;list-style:none;font-size:18px}
+.scope-more>div{position:absolute;right:0;top:100%;z-index:20;display:grid;gap:8px;width:320px;padding:12px;background:#202020;border:1px solid #444;box-shadow:0 5px 18px #0008;font-size:11px;color:#aaa}
+.scope-more #scopeTargetSummary{white-space:normal;overflow-wrap:anywhere;margin:0}
+
+/* Workbench chrome: compact navigation above a separate editor action strip. */
+.titlebar{height:34px;padding:0 9px;gap:12px;background:#181818}
+.brand{gap:0}.brand-name{display:none}.brand-mark{width:20px;height:20px;font-size:12px;border-radius:3px}
+.view-tabs{height:34px;padding:0;gap:0;background:transparent;border:0;border-radius:0}
+.view-tabs .view-switch{height:34px;padding:0 12px;border-radius:0;border:0;border-bottom:2px solid transparent;background:transparent;font-size:12px}
+.view-tabs .view-switch.active{background:#222;color:#eee;border-bottom-color:#aaa}
+.title-actions{gap:4px}.title-actions button{height:26px;padding:2px 8px;border-color:transparent;background:transparent;border-radius:3px;font-size:11px}
+.title-actions button:hover{background:#303030}
+#desktopShell{height:calc(100vh - 60px)}
+body[data-view="editor"] .editor-toolbar{height:30px;min-height:30px;padding:2px 6px;gap:6px;overflow-x:auto;flex:none}
+.editor-actions{flex-wrap:nowrap;gap:2px;flex:none}
+.editor-actions .editor-icon-button{width:26px;min-width:26px;height:24px;padding:3px;border:0;border-radius:3px;background:transparent;color:#b9bdc5}
+.editor-actions .editor-icon-button:hover{background:#333;color:#fff}
+.editor-actions .editor-icon-button.primary{color:#aab4ff}
+.editor-actions .editor-icon-button svg{width:16px;height:16px}
+.editor-toolbar-right{flex-wrap:nowrap;gap:3px;margin-left:auto;flex:none}
+.editor-toolbar-right button,.editor-toolbar-right #goDefinition,.editor-toolbar-right #goBack,.editor-toolbar-right #goLine,.editor-toolbar-right #terminalToggle{height:24px;padding:2px 6px;border:0;background:transparent;border-radius:3px;font-size:11px}
+.editor-toolbar-right button:hover{background:#333}
+#debugState{max-width:150px;overflow:hidden;text-overflow:ellipsis}
+#explorer>.sidebar-heading{height:30px;min-height:30px;padding:2px 12px}
+#statusBar .header-status{max-width:50%;padding:0;border:0;border-radius:0;background:transparent;font-size:11px}
+@media(max-width:1000px){#debugState{display:none}.view-tabs .view-switch{padding:0 8px}}
+body[data-view="editor"] .editor-toolbar{overflow-y:hidden}#fileTabs{overflow-y:hidden}
+
+:root{color-scheme:dark}
+:root[data-theme="light"]{color-scheme:light;--pnx-bg:#fff;--pnx-sidebar:#f3f4f6;--pnx-surface:#f7f8fa;--pnx-raised:#e9edf2;--pnx-border:#d9dee5;--pnx-border-strong:#b9c2ce;--pnx-text:#24292f;--pnx-muted:#5b6573;--pnx-accent:#365bb5;--pnx-accent-bg:#dfe8fa}
+[data-theme="light"] :is(.titlebar,.editor-toolbar,#fileTabs,#editorFooter,.terminal-head,.plot-header,.plot-group-bar,.scope-more>div,.scope-plot-tools,.card,.two-col>div,.debug-panel){background:var(--pnx-surface)!important;color:var(--pnx-text);border-color:var(--pnx-border)}
+[data-theme="light"] :is(#scopeArea,#tools,#editorSurface,#emptyEditor,#codeArea,#terminal,.terminal-output,.terminal-panel,#markdownPreview,.plot-card,.plot-frame,.log-card pre,.scope-property-variables,dialog){background:var(--pnx-bg);color:var(--pnx-text);border-color:var(--pnx-border)}
+[data-theme="light"] :is(button,.tree-row,.variable-list label,.file-tab,.plot-legend,.editor-actions .editor-icon-button,.selected-variable-name){color:var(--pnx-text)}
+[data-theme="light"] button:hover:not(:disabled),[data-theme="light"] :is(.file-tab.active,.view-switch.active,.tree-row.active,.selected-variable-row.editing,.selected-variable-row:hover,.variable-list label.selected){background:var(--pnx-accent-bg)!important;color:var(--pnx-text)}
+[data-theme="light"] :is(.file-tab,.watch-branch-children,.selected-variable-row,.selected-variable-value,.scope-property-variables label,#markdownPreview td,#markdownPreview th){border-color:var(--pnx-border)}
+[data-theme="light"] #codeEditor{background:transparent!important;caret-color:#222}
+[data-theme="light"] #codeHighlight{color:#24292f}
+[data-theme="light"] #breakpointGutter{background:#f7f8fa;color:#687383;border-color:#ddd}
+[data-theme="light"] .tok-keyword{color:#7a2797}[data-theme="light"] .tok-type{color:#096c80}[data-theme="light"] .tok-string{color:#945318}[data-theme="light"] .tok-comment{color:#46703f}[data-theme="light"] .tok-number{color:#116a51}[data-theme="light"] .tok-preproc{color:#934518}
+[data-theme="light"] :is(#markdownPreview pre,#markdownPreview code,.chips span){background:#edf0f4;color:#334155}
+[data-theme="light"] #markdownPreview a{color:#0969bd}
+[data-theme="light"] .selected-variable-value{color:#254f99}
+[data-theme="light"] .primary{color:#fff;background:#365bb5}
+[data-theme="light"] #plotGroups button[aria-selected="true"]{background:#dfe8fa;color:#24292f;box-shadow:inset 0 -2px #365bb5}
+[data-theme="light"] :is(.terminal-output, .terminal-output pre, #terminal pre){color:#303943;background:#fff}
+[data-theme="light"] *::-webkit-scrollbar-thumb{background:#b9c2ce;border-color:var(--pnx-bg)}
+
+html[data-theme="light"] body :is(#explorer,#activityBar,.sidebar){background:var(--pnx-sidebar);border-color:var(--pnx-border)}
+html[data-theme="light"] body .file-tab{background:var(--pnx-surface)}
+html[data-theme="light"] #fileTree .tree-row{color:var(--pnx-text)}
+html[data-theme="light"] #fileTree .tree-row:hover{background:#e5eaf0}
+html[data-theme="light"] #fileTree .tree-row.active{background:var(--pnx-accent-bg);color:var(--pnx-text)}
+html[data-theme="light"] :is(#terminalPanel,#terminalResize,#log){background:#fff;color:#303943;border-color:var(--pnx-border)}
+html[data-theme="light"] #explorer :is(h2,.folder-root,#folderRoot){color:#46505e}html[data-theme="light"] .explorer-file-icon{filter:saturate(1.3) brightness(.75)}
+
+/* Build uses the same quiet icon surface as the adjacent debug tools. */
+html[data-theme="light"] .editor-actions .editor-icon-button.primary{background:transparent;color:#365bb5}
+html[data-theme="light"] .editor-actions .editor-icon-button.primary:hover:not(:disabled){background:#dfe8fa;color:#25458b}

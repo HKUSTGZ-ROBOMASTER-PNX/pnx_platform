@@ -16,3 +16,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 input,select,textarea{border-radius:6px}
 #status{color:#8b8e99}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+:root[data-theme="light"]{color-scheme:light;--vscode-foreground:#24292f;--vscode-editor-background:#fff;--vscode-panel-border:#d9dee5;--vscode-input-border:#b9c2ce;--vscode-input-foreground:#24292f;--vscode-input-background:#fff;--vscode-button-foreground:#24292f;--vscode-button-background:#e9edf2;--vscode-errorForeground:#b42323;--vscode-focusBorder:#365bb5}
+[data-theme="light"] body,[data-theme="light"] header{background:#fff;color:#24292f;border-color:#d9dee5}
+[data-theme="light"] section,[data-theme="light"] details.module{background:#f7f8fa;border-color:#d9dee5}
+[data-theme="light"] button{background:#e9edf2;color:#24292f;border-color:#b9c2ce}
+[data-theme="light"] button:hover:not(:disabled){background:#dfe8fa}
+[data-theme="light"] #status{color:#5b6573}

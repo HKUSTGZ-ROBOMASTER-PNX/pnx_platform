@@ -9,13 +9,18 @@
     <button class="view-switch" data-view-target="scope" aria-pressed="false">实时曲线</button>
     <button class="view-switch" data-view-target="config" aria-pressed="false">设置与构建</button>
   </nav>
-  <div class="title-actions"><button id="openFolder">打开文件夹</button><span id="status" class="header-status">启动中…</span></div>
+  <div class="title-actions"><button id="themeToggle" title="切换浅色模式" aria-label="切换浅色模式">浅色</button><button id="projectSettings">目标与插件</button><button id="openFolder">打开文件夹</button></div>
 </header>
+<dialog id="projectSettingsDialog"><h2>目标与插件</h2><p id="projectSettingsRoot"></p><form id="projectSettingsForm">
+<fieldset><legend>调试目标</legend><button id="detectTarget" type="button">重新识别</button><select id="detectedElf" aria-label="已发现 ELF"><option value="">选择发现的 ELF</option></select><p id="detectionHint" class="hint"></p><label>芯片型号<input id="targetChip" placeholder="例如 STM32H723VG"></label><label>ELF 路径<input id="targetElf" placeholder="build/firmware.elf 或绝对路径"></label><label><input id="targetBuildFirst" type="checkbox">调试与烧录前构建</label><p class="hint">指定 ELF 后可直接连接，须与板上固件一致；源码位于当前工作区。PnX 插件启用时可留空使用板卡预设。</p></fieldset>
+<fieldset><legend>构建任务（可选）</legend><label>可执行程序<input id="taskExecutable" placeholder="留空使用 CMake preset，例如 cmake、make"></label><label>参数（JSON 字符串数组）<input id="taskArguments" value="[]" placeholder='["--build","build"]'></label><p class="hint">在当前工程目录执行，不经 shell 展开。</p></fieldset>
+<fieldset><legend>工程插件</legend><div id="projectPluginList"></div><p id="pnxPluginHint" class="hint"></p></fieldset>
+<p id="projectSettingsError" role="alert"></p><div class="row"><button id="projectSettingsCancel" type="button">取消</button><button type="submit">保存设置</button></div></form></dialog>
 <dialog id="folderDialog"><form method="dialog"><h2>打开文件夹</h2><label>文件夹绝对路径<input id="folderPath" required placeholder="D:\Workspace\project"></label><div class="row"><button value="cancel" formnovalidate>取消</button><button value="open" class="primary">打开</button></div></form></dialog>
 <dialog id="writeDialog" aria-labelledby="writeTitle"><h2 id="writeTitle">写入全局变量</h2><p id="writeTarget"></p><p id="writeCurrent"></p><label>新值<input id="writeValue" autocomplete="off" spellcheck="false"></label><p id="writeError" role="alert"></p><div class="row"><button id="writeCancel">取消</button><button id="writeSubmit" class="primary">写入并读回校验</button></div></dialog>
 <dialog id="definitionDialog" aria-labelledby="definitionTitle"><h2 id="definitionTitle">跳转到定义</h2><p id="definitionHint"></p><div id="definitionResults"></div><div class="row"><button id="definitionClose">关闭</button></div></dialog>
 <dialog id="lineDialog" aria-labelledby="lineTitle"><h2 id="lineTitle">跳转到行</h2><form method="dialog"><label>行号<input id="lineNumber" type="number" min="1" step="1" required></label><div class="row"><button value="cancel" formnovalidate>取消</button><button value="jump" class="primary">跳转</button></div></form></dialog>
-<dialog id="variablePicker" aria-labelledby="variablePickerTitle"><h2 id="variablePickerTitle">搜索添加变量</h2><input id="search" type="search" placeholder="搜索全局变量、结构体或实例…" aria-label="搜索变量"><button id="selectMatches" class="select-matches" disabled>添加筛选结果</button><div id="variables" class="variable-list"></div><div class="picker-footer"><span id="variableCount">0 / 0 匹配</span><button id="closeVariablePicker">完成</button></div></dialog>
+<dialog id="variablePicker" aria-labelledby="variablePickerTitle"><h2 id="variablePickerTitle">搜索添加变量</h2><input id="search" type="search" placeholder="搜索全局变量、结构体或实例…" aria-label="搜索变量"><button id="selectMatches" class="select-matches" disabled>添加筛选结果</button><div id="variables" class="variable-list"></div><div class="picker-footer"><span id="variableCount">0 / 0 匹配</span><button id="variablePrevious" aria-label="上一页变量">上一页</button><span id="variablePage">1 / 1</span><button id="variableNext" aria-label="下一页变量">下一页</button><button id="closeVariablePicker">完成</button></div></dialog>
 <dialog id="toolchainMissing" aria-labelledby="toolchainMissingTitle"><h2 id="toolchainMissingTitle">需要安装编译工具</h2><p id="toolchainMissingText"></p><p class="hint">是否打开缺失工具的官网下载页面？安装后返回工作台重新检测。</p><div class="row"><button id="toolchainDownload" class="primary">打开官网下载页</button><button id="toolchainMissingClose">稍后安装</button></div></dialog>
 <div id="desktopShell">
   <nav id="activityBar" aria-label="工作区导航">
@@ -66,16 +71,15 @@
   </aside>
   <div id="scopeResize" role="separator" aria-orientation="vertical" aria-label="拖动调整变量栏宽度" tabindex="0"></div>
   <section id="scopeArea" class="view-scope">
-    <div class="content-heading"><div><span class="eyebrow">LIVE TELEMETRY</span><h2>实时曲线</h2></div><span id="connectionBadge" class="connection-badge">未连接</span></div>
     <div class="scope-toolbar">
-      <div class="scope-actions"><button id="scopeMock">模拟连接</button><button id="scopeAttach">连接目标板</button><button id="scopeWriteConnect" title="连接具有变量写入权限的真实目标板">可写连接</button><button id="scopeDisconnect" disabled>断开</button></div>
-      <div class="scope-rate">请求采样率 <input id="scopeRate" type="number" min="1" max="100000" value="1000" aria-label="请求采样率"> S/s</div>
+      <div class="scope-actions"><span id="connectionBadge" class="connection-badge">未连接</span><button id="scopeTargetSettings" title="调试目标与插件">目标</button><button id="scopeAttach">连接目标板</button><button id="scopeWriteConnect" title="连接具有变量写入权限的真实目标板">可写连接</button><button id="scopeDisconnect" disabled>断开</button><button id="saveWatchConfig" title="保存到当前工程 pnx-watch.json">保存配置</button><button id="loadWatchConfig" title="加载当前工程 pnx-watch.json">加载</button><details class="scope-more"><summary title="更多工具">⋯</summary><div><button id="scopeMock">模拟连接</button><span id="scopeTargetSummary" class="scope-metrics"></span><span>暂停仅冻结画面；采集和 CSV 记录继续。</span></div></details></div>
+      <div class="scope-rate"><input id="scopeRate" type="number" min="1" max="100000" value="1000" aria-label="请求采样率"> S/s</div>
     </div>
     <div id="metrics" class="scope-metrics">尚未采集数据</div>
     <div id="scopeNotice" class="scope-notice hidden" role="status"></div>
-    <div class="plot-group-bar"><div id="plotGroups" role="tablist" aria-label="曲线组"></div><button id="addPlotGroup" title="新建曲线组">＋ 新建组</button><button id="renamePlotGroup">重命名组</button><button id="removePlotGroup">删除组</button></div><div class="plot-controls"><button id="addPlot">+ 添加曲线</button><label>排列 <select id="plotColumns"><option value="1">单列</option><option value="2" selected>双列</option><option value="3">三列</option></select></label><label>时间窗 <input id="plotTimeWindow" type="number" min="0.1" max="120" step="0.1" value="10" aria-label="所有曲线的横坐标时间长度">秒</label><button id="plotGridFullscreen" title="将全部曲线全屏显示">全屏曲线区</button><span>拖动曲线标题排序；在图中拖动回看、滚轮缩放</span></div>
+    <div class="scope-plot-tools"><div class="plot-group-bar"><div id="plotGroups" role="tablist" aria-label="曲线组"></div><button id="addPlotGroup" title="新建曲线组">＋组</button><button id="renamePlotGroup" title="重命名当前组">重命名</button><button id="removePlotGroup" title="删除当前组">删除</button></div><div class="plot-controls"><button id="addPlot">+ 添加曲线</button><label>排列 <select id="plotColumns"><option value="1">单列</option><option value="2" selected>双列</option><option value="3">三列</option></select></label><label>时间窗 <input id="plotTimeWindow" type="number" min="0.1" max="120" step="0.1" value="10" aria-label="所有曲线的横坐标时间长度">秒</label><button id="pauseAllPlots" title="将所有分组的曲线冻结在同一采样时刻，采集与记录继续" aria-pressed="false">全部暂停</button><button id="plotGridFullscreen" title="将全部曲线全屏显示">全屏曲线区</button></div></div>
     <div id="plotGrid" class="plot-grid"></div>
-    <p class="scope-note">暂停只冻结曲线显示，采集与 CSV 记录继续。曲线历史受内存容量限制；CSV 保存完整采样。</p>
+
   </section>
 
   <main id="tools" class="view-tools">
@@ -117,6 +121,6 @@
     <pre id="log" role="tabpanel" aria-live="off"></pre>
   </section>
 </div>
-<footer id="statusBar"><span id="workspaceLabel">打开文件夹以开始编辑</span><span class="status-right">PnX Platform · 本地工作台</span></footer>
-<script>window.PNX_TOKEN = '__PNX_TOKEN__';</script><script src="/markdown.js"></script><script src="/app.js"></script>
+<footer id="statusBar"><span id="workspaceLabel">打开文件夹以开始编辑</span><span id="status" class="header-status">启动中…</span></footer>
+<script>window.PNX_TOKEN = '__PNX_TOKEN__';</script><script src="/markdown.js"></script><script src="/pnx-diagnostics.js"></script><script src="/app.js"></script>
 </body></html>

@@ -4,7 +4,7 @@ const colors = ['#5ee1a8','#ffbd69','#6db6ff','#ff7397','#bb9aff','#f0e07b','#6d
 const BANK_CHANNELS = 256;
 const PLOT_PAGE_SIZE = 64;
 const state = { board: 'h723_mc02', preset: 'h723-debug', config: {}, hardware: {}, variables: [], selected: [], activeIds: [], activeIndex: new Map(), points: [], latest: [], series: new Map(), latestById: new Map(), latestAtById: new Map(), firstTimestampNs: null, lastTimestampNs: 0, banks: 1, bankSize: BANK_CHANNELS, bankDwellMs: 0, streamEpoch: null, sampleCount: 0, droppedFrames: 0, rateWindow: [], lastSampleAt: 0, connected: false, flashAccess: false,
-  debugAccess: false, debugPaused: false, debugReason: '', stoppedAt: null, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plotGroups: [{ id: 'default', name: '默认组' }], activePlotGroup: 'default', plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
+  projectProfile: null, debugAccess: false, debugPaused: false, debugReason: '', stoppedAt: null, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plotGroups: [{ id: 'default', name: '默认组' }], activePlotGroup: 'default', plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
   observedValues: new Map(), valueChangedAt: new Map(), valueSeenAt: new Map(), recording: false, recordFile: null, recordRows: 0, recordError: null, missingTools: [] };
 async function api(route, data) {
   const response = await fetch(route, { method: data === undefined ? 'GET' : 'POST', headers: { 'X-PnX-Token': token, 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
@@ -187,7 +187,7 @@ function updateConfigFrame() {
     if (frame.getAttribute('src') !== source) frame.setAttribute('src', source);
   } else {
     frame.removeAttribute('src');
-    const placeholder = '<body style="background:#181b20;color:#b8c4d3;font:14px Segoe UI,sans-serif;padding:24px">图形配置仅适用于 PnX 项目。当前文件夹可使用编辑器和 CMake 构建。</body>';
+    const placeholder = '<body style="background:#181b20;color:#b8c4d3;font:14px Segoe UI,sans-serif;padding:24px">PnX 配置插件未启用或未识别到兼容工程。请点击顶部“目标与插件”设置通用调试目标和构建任务。</body>';
     if (frame.getAttribute('srcdoc') !== placeholder) frame.setAttribute('srcdoc', placeholder);
   }
 }
@@ -296,7 +296,31 @@ function goToLine() {
   $('lineNumber').value = String(editor.value.slice(0, editor.selectionStart).split('\n').length);
   $('lineDialog').showModal(); $('lineNumber').focus(); $('lineNumber').select();
 }
-function mayCloseFile() { return ![...state.files.values()].some(fileDirty) || confirm('当前工作区有未保存修改。放弃修改并继续？'); }
+// Keep confirmations in the renderer: native JS dialogs can leave Windows
+// Electron text controls without keyboard focus after closing.
+function confirmAction(message) {
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'confirmation-dialog';
+  const title = document.createElement('h2'); title.textContent = '确认操作';
+  const text = document.createElement('p'); text.textContent = message;
+  const actions = document.createElement('div'); actions.className = 'row';
+  const cancel = document.createElement('button'); cancel.textContent = '取消';
+  const accept = document.createElement('button'); accept.textContent = '确认'; accept.className = 'primary';
+  cancel.onclick = () => dialog.close('cancel');
+  accept.onclick = () => dialog.close('confirm');
+  actions.append(cancel, accept); dialog.append(title, text, actions); document.body.append(dialog);
+  return new Promise(resolve => {
+    dialog.onclose = () => {
+      const accepted = dialog.returnValue === 'confirm';
+      dialog.remove();
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+      resolve(accepted);
+    };
+    dialog.showModal(); cancel.focus();
+  });
+}
+async function mayCloseFile() { return ![...state.files.values()].some(fileDirty) || await confirmAction('当前工作区有未保存修改。放弃修改并继续？'); }
 const escapeHtml = text => text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const cppToken = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|^\s*#[^\n]*|\b(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?)\b|\b[A-Za-z_]\w*\b/gm;
 const cppKeywords = new Set('alignas alignof asm auto break case catch class const consteval constexpr constinit continue default delete do else enum explicit export extern false for friend goto if inline mutable namespace new noexcept nullptr operator override private protected public register reinterpret_cast requires return sizeof static static_assert struct switch template this throw true try typedef typename union using virtual volatile while'.split(' '));
@@ -437,9 +461,9 @@ function activateFile(path) {
   for (const row of document.querySelectorAll('#fileTree .tree-row')) { const active = row.dataset.path === path; row.classList.toggle('active', active); row.setAttribute('aria-selected', String(active)); }
   updateEditor(); highlightCode(); syncHighlightScroll(); renderBreakpointGutter(); setView('editor');
 }
-function closeFile(path) {
+async function closeFile(path) {
   const file = state.files.get(path); if (!file) return;
-  if (fileDirty(file) && !confirm(`${path} 尚未保存。关闭此标签？`)) return;
+  if (fileDirty(file) && !(await confirmAction(`${path} 尚未保存。关闭此标签？`))) return;
   const paths = [...state.files.keys()], index = paths.indexOf(path); state.files.delete(path);
   if (state.file === file) { state.file = null; const next = paths[index + 1] || paths[index - 1]; if (next) activateFile(next); }
   updateEditor();
@@ -470,17 +494,19 @@ async function chooseBrowserFolder() {
   return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'open' ? $('folderPath').value.trim() : null), { once: true }));
 }
 async function openFolder() {
-  if (!mayCloseFile()) return;
+  if (!(await mayCloseFile())) return;
   const folder = window.PNXDesktop?.chooseFolder ? await window.PNXDesktop.chooseFolder() : await chooseBrowserFolder();
     if (!folder) return;
     const result = await api('/api/workspace/open', { folder });
-    if (result.root !== state.workspace) { resetConnectionUI(); expandedDirectories.clear(); }
+    if (result.root !== state.workspace) { resetConnectionUI(false); expandedDirectories.clear(); }
     state.workspace = result.root; state.projectRoot = result.projectRoot; state.file = null; state.files.clear(); loadBreakpoints(); definitionHistory.length = 0; $('goBack').disabled = true; updateEditor();
+  await loadWatchFile(true);
   $('workspaceLabel').textContent = result.root;
   $('folderRoot').textContent = result.root;
   $('fileTree').replaceChildren(); await renderDirectory('', $('fileTree'));
   setView('editor');
-  if (result.isPnx) { await loadBoard(); log(`PnX 项目已切换至 ${result.root}`); }
+  await loadProjectProfile();
+  if (state.projectRoot) { await loadBoard(); log(`PnX 项目已切换至 ${result.root}`); }
   else { state.config = {}; state.hardware = {}; $('hardware').replaceChildren(); $('editor').classList.add('hidden'); fillMotor(); await loadBuildPresets(); log(`已打开文件夹 ${result.root}；构建使用此文件夹的 CMake 预设`); }
 }
 const expandedDirectories = new Set();
@@ -567,9 +593,10 @@ async function loadBuildPresets() {
   $('preset').value = presets.includes(state.preset) ? state.preset : presets[0] || '';
   state.preset = $('preset').value;
   $('board').disabled = !state.projectRoot;
-  $('configure').disabled = $('quickConfigure').disabled = $('build').disabled = $('quickBuild').disabled = !state.preset;
+  $('configure').disabled = $('quickConfigure').disabled = !state.preset;
+  $('build').disabled = $('quickBuild').disabled = !state.preset && !state.projectProfile?.build.executable;
   $('buildContext').textContent = state.projectRoot ? `当前 PnX 工程：${info.root}` : presets.length
-    ? `当前 CMake 工程：${info.root}；PnX 板卡、调试和烧录需要打开 PnX 项目。`
+    ? `当前 CMake 工程：${info.root}；调试目标可在“目标与插件”中设置。`
     : '当前文件夹没有可用的 CMake 预设。';
   updateDebugButtons();
 }
@@ -621,12 +648,16 @@ async function saveJson() {
   if (editing === 'robot') fillMotor();
   log(`${editing}.json 已保存；请重新校验配置和编译。`);
 }
+const PICKER_PAGE_SIZE = 200;
+let pickerPage = 0, pickerCache = null, pickerSearchTimer;
 function setVariableCatalog(variables, tree) {
+  pickerCache = null; pickerPage = 0;
   state.variables = variables;
   state.variableById = new Map(variables.map(variable => [variable.id, variable]));
   state.variableTree = Array.isArray(tree) ? tree : variables.map(variable => ({ ...variable, expression: variable.name, children: [] }));
   state.variableNodes.clear(); state.variableLeafIds.clear();
   const index = node => {
+    node.searchText = `${node.name || ''} ${node.expression || ''}`.toLowerCase();
     state.variableNodes.set(node.id, node);
     const ids = node.children?.length ? node.children.flatMap(index) : [node.id];
     state.variableLeafIds.set(node.id, ids);
@@ -636,7 +667,7 @@ function setVariableCatalog(variables, tree) {
 }
 function filteredVariableTree(nodes, query, inheritedMatch = false) {
   return nodes.flatMap(node => {
-    const nameMatches = inheritedMatch || !query || `${node.name || ''} ${node.expression || ''}`.toLowerCase().includes(query);
+    const nameMatches = inheritedMatch || !query || node.searchText.includes(query);
     if (!node.children?.length) return nameMatches ? [node] : [];
     const children = filteredVariableTree(node.children, query, nameMatches);
     return children.length ? [{ ...node, children }] : [];
@@ -656,11 +687,31 @@ function changeVariableSelection(ids, checked) {
 function displayVariables() {
   const query = $('search').value.trim().toLowerCase();
   const selected = new Set(state.selected);
-  const matching = query ? filteredVariableTree(state.variableTree, query) : state.variableTree;
-  const matchingIds = matching.flatMap(node => {
-    const collect = item => item.children?.length ? item.children.flatMap(collect) : [item.id];
-    return collect(node);
-  });
+  if (!pickerCache || pickerCache.query !== query) {
+    const matching = query ? filteredVariableTree(state.variableTree, query) : state.variableTree;
+    const ids = [];
+    const collect = node => { if (node.children?.length) node.children.forEach(collect); else ids.push(node.id); };
+    matching.forEach(collect);
+    pickerCache = { query, matching, ids }; pickerPage = 0;
+  }
+  const { matching, ids: matchingIds } = pickerCache;
+  // Page visible tree rows, retaining ancestors on every page. Never create
+  // thousands of DOM controls for broad searches or large expanded arrays.
+  const visible = [], parents = new Map();
+  const visit = (node, parent) => {
+    visible.push(node); parents.set(node.id, parent);
+    if (node.children?.length && (query || state.expandedVariables.has(node.id))) node.children.forEach(child => visit(child, node));
+  };
+  matching.forEach(node => visit(node, null));
+  const pages = Math.max(1, Math.ceil(visible.length / PICKER_PAGE_SIZE));
+  pickerPage = Math.max(0, Math.min(pickerPage, pages - 1));
+  const pageIds = new Set();
+  for (let node of visible.slice(pickerPage * PICKER_PAGE_SIZE, (pickerPage + 1) * PICKER_PAGE_SIZE)) {
+    while (node && !pageIds.has(node.id)) { pageIds.add(node.id); node = parents.get(node.id); }
+  }
+  $('variablePage').textContent = `${pickerPage + 1} / ${pages}`;
+  $('variablePrevious').disabled = pickerPage === 0;
+  $('variableNext').disabled = pickerPage + 1 >= pages;
   state.matchingVariableIds = matchingIds;
   $('selectedCount').textContent = `已选 ${state.selected.length}`;
   $('bankCount').textContent = `曲线 ${plotVariableIds().length} 路 · 分 ${Math.max(1, Math.ceil(plotVariableIds().length / state.bankSize))} 组`;
@@ -681,7 +732,7 @@ function displayVariables() {
       const swatch = document.createElement('i'); swatch.className = 'variable-swatch'; swatch.style.background = box.checked ? colors[state.selected.indexOf(node.id) % colors.length] : '#596575';
       const name = document.createElement('span'); name.className = 'variable-name'; name.textContent = node.name || variable.name; name.title = node.expression || variable.name; label.append(box, swatch, name);
       if (box.checked) { const destination = document.createElement('select'); destination.setAttribute('aria-label', `${variable.name} 所在曲线`); destination.replaceChildren(option('watch-only', '仅查看 / 修改'), ...state.plots.map(plot => option(plot.id, plotGroupLabel(plot)))); destination.value = state.plotAssignments.get(node.id) || state.plots[0].id; destination.onclick = event => event.stopPropagation(); destination.onchange = () => { state.plotAssignments.set(node.id, destination.value); renderPlots(); savePlotLayout(); }; label.append(destination); }
-      if (variable.writable && state.debugAccess) { const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'variable-write'; edit.textContent = '✎'; edit.title = `修改 ${variable.name} (${variable.type})`; edit.setAttribute('aria-label', edit.title); edit.onclick = event => { event.preventDefault(); event.stopPropagation(); openVariableWrite(variable); }; label.append(edit); }
+      if (variable.writable && state.debugAccess && state.connected) { const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'variable-write'; edit.textContent = '✎'; edit.title = `修改 ${variable.name} (${variable.type})`; edit.setAttribute('aria-label', edit.title); edit.onclick = event => { event.preventDefault(); event.stopPropagation(); openVariableWrite(variable); }; label.append(edit); }
       return label;
     }
     const wrapper = document.createElement('div'); wrapper.className = 'variable-branch';
@@ -699,10 +750,10 @@ function displayVariables() {
     const title = document.createElement('button'); title.type = 'button'; title.className = 'variable-branch-title'; title.textContent = node.name || node.expression; title.title = `${node.expression || node.name} · ${node.type || ''}`; title.onclick = toggle.disabled ? null : toggleBranch;
     const count = document.createElement('span'); count.className = 'variable-branch-count'; count.textContent = String(ids.length);
     row.append(toggle, box, title, count); wrapper.append(row);
-    if (expanded) for (const child of node.children) wrapper.append(renderNode(child, depth + 1));
+    if (expanded) for (const child of node.children) if (pageIds.has(child.id)) wrapper.append(renderNode(child, depth + 1));
     return wrapper;
   };
-  list.replaceChildren(...matching.map(node => renderNode(node, 0)));
+  list.replaceChildren(...matching.filter(node => pageIds.has(node.id)).map(node => renderNode(node, 0)));
   $('variableCount').textContent = `${shownLeaves} / ${matchingIds.length} 匹配`;
   list.scrollTop = scrollTop;
 }
@@ -734,13 +785,19 @@ function displaySelectedVariables() {
     top.onclick = expandActions;
     row.onkeydown = event => { if (event.target === row && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); expandActions(); } };
     const read = document.createElement('button'); read.textContent = '↻'; read.setAttribute('aria-label', '读取当前值'); read.title = '读取当前值，不订阅曲线';
-    read.onclick = () => perform(() => readWatchValues([id])); actions.append(read);
-    if (variable.writable && state.debugAccess) {
+    read.disabled = !state.connected || !!variable.unavailable; read.onclick = () => perform(() => readWatchValues([id])); actions.append(read);
+    if (variable.writable && state.debugAccess && state.connected) {
       const edit = document.createElement('button'); edit.className = 'variable-write'; edit.textContent = '✎'; edit.title = `修改 ${variable.name}`;
       edit.onclick = () => openVariableWrite(variable); actions.append(edit);
     } else {
       const reason = document.createElement('span'); reason.className = 'hint'; reason.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>'; reason.setAttribute('aria-label', '只读');
-      reason.title = !state.debugAccess ? '需要可写连接' : variable.writeReason || '未确认显式初始化的全局标量'; actions.append(reason);
+      reason.title = variable.writable ? '当前为只读采样连接，请切换可写连接' : variable.writeReason || '未确认显式初始化的全局标量';
+      const explanation = document.createElement('span'); explanation.className = 'variable-write-reason'; explanation.textContent = reason.title;
+      actions.append(reason, explanation);
+      if (variable.writable && !state.debugAccess) {
+        const enable = document.createElement('button'); enable.textContent = '切换可写连接';
+        enable.onclick = () => perform(() => enableVariableWrites(variable.id)); actions.append(enable);
+      }
     }
     const remove = document.createElement('button'); remove.className = 'variable-remove'; remove.textContent = '×'; remove.title = `移除 ${variable.name}`;
     remove.onclick = () => changeVariableSelection([id], false);
@@ -768,10 +825,18 @@ function displaySelectedVariables() {
   list.scrollTop = scrollTop;
   updateLive();
 }
+async function enableVariableWrites(id) {
+  const selected = [...state.selected];
+  await connect(false, false, true, false);
+  changeVariableSelection(selected.filter(key => state.variableById.has(key)), true);
+  const variable = state.variableById.get(id);
+  if (variable?.writable && state.debugAccess) openVariableWrite(variable);
+}
 let variableToWrite;
 function plotVariableIds() { return state.selected.filter(id => state.plotAssignments.get(id) !== 'watch-only'); }
 async function readWatchValues(ids) {
   if (!state.connected) throw new Error('请先连接目标');
+  ids = ids.filter(id=>!state.variableById.get(id)?.unavailable);
   const connectionCatalog = state.variableById;
   $('refreshWatchValues').disabled = true;
   try {
@@ -842,19 +907,38 @@ function refreshPlotViewbar(card) {
   card.querySelector('.plot-pause').textContent = view.paused ? '继续' : '暂停';
   card.querySelector('.plot-pause').title = view.paused ? '恢复实时显示' : '冻结此曲线画面；采集与 CSV 记录继续';
 }
+function updateAllPlotsPauseButton() {
+  const paused = state.plots.length > 0 && state.plots.every(p => plotView(p.id).paused);
+  $('pauseAllPlots').textContent = paused ? '全部继续' : '全部暂停';
+  $('pauseAllPlots').setAttribute('aria-pressed', String(paused));
+}
+function toggleAllPlotsPause() {
+  const resume = state.plots.every(p => plotView(p.id).paused);
+  // Capture in one synchronous turn so every group shares the same endpoint.
+  const timestamp = state.lastTimestampNs;
+  const snapshot = resume ? null : {series:new Map([...state.series].map(([id, points]) => [id, points.slice()])),firstTimestampNs:state.firstTimestampNs,lastTimestampNs:timestamp};
+  for (const plot of state.plots) {
+    const view = plotView(plot.id);
+    view.paused = !resume; view.snapshot = snapshot; view.anchorNs = resume ? null : timestamp;
+  }
+  for (const card of $('plotGrid').children) refreshPlotViewbar(card);
+  updateAllPlotsPauseButton(); scheduleDraw(true);
+}
+$('pauseAllPlots').onclick = toggleAllPlotsPause;
 function freezePlot(card) {
   const view = plotView(card.dataset.plotId);
   if (view.paused) return;
   const assigned = state.activeIds.filter(id => (state.plotAssignments.get(id) || state.plots[0].id) === card.dataset.plotId);
   view.snapshot = { series: new Map(assigned.map(id => [id, (state.series.get(id) || []).slice()])), firstTimestampNs: state.firstTimestampNs, lastTimestampNs: state.lastTimestampNs };
   view.paused = true; view.anchorNs = state.lastTimestampNs;
+  updateAllPlotsPauseButton();
   refreshPlotViewbar(card);
 }
 function togglePlotPause(card) {
   const view = plotView(card.dataset.plotId);
   if (view.paused) { view.paused = false; view.snapshot = null; view.anchorNs = null; }
   else freezePlot(card);
-  refreshPlotViewbar(card); scheduleDraw(true);
+  refreshPlotViewbar(card); updateAllPlotsPauseButton(); scheduleDraw(true);
 }
 function clampPlotAnchor(card, value) {
   const view = plotView(card.dataset.plotId), data = plotData(card.dataset.plotId);
@@ -879,7 +963,7 @@ function panPlot(card, deltaPixels, widthPixels, startingAnchor) {
   freezePlot(card);
   const view = plotView(card.dataset.plotId);
   view.anchorNs = clampPlotAnchor(card, startingAnchor - deltaPixels / Math.max(1, widthPixels) * view.seconds * 1e9);
-  refreshPlotViewbar(card); scheduleDraw(true);
+  refreshPlotViewbar(card); updateAllPlotsPauseButton(); scheduleDraw(true);
 }
 function reorderPlot(sourceId, targetId) {
   const from = state.plots.findIndex(plot => plot.id === sourceId), to = state.plots.findIndex(plot => plot.id === targetId);
@@ -917,6 +1001,7 @@ function renderPlotGroups() {
   $('removePlotGroup').disabled = state.plotGroups.length < 2;
 }
 function renderPlots() {
+  updateAllPlotsPauseButton();
   renderPlotGroups();
   const visiblePlots = state.plots.filter(plot => (plot.groupId || 'default') === state.activePlotGroup);
   const grid = $('plotGrid'); grid.style.setProperty('--plot-columns', $('plotColumns').value); grid.dataset.count = String(visiblePlots.length);
@@ -1092,93 +1177,67 @@ async function handleDebugEvent(data) {
     if (revision === stopRevision) { $('debugLocation').textContent = `位置读取失败：${error.message}`; log(`位置读取失败：${error.message}`, 'debug'); }
   }
 }
-const canFields = ['state_bo','state_ep','state_ew','tec','rec','lec','cel_total','ack_total','rx_frames_total','tx_attempts_total','rx_overrun_total','busoff_total','fifo0_fill','fifo1_fill','rx_rate_avg','tx_rate_avg'];
-const pnxStatusNames = ['ok','error','not_configured','invalid_arg','busy','not_initialized','not_connected','empty','too_large','invalid_context'];
-function diagnosticVariables(target) {
-  if (target === 'status') {
-    const query = $('diagnosticFilter').value.trim().toLowerCase();
-    return state.variables.filter(variable =>
-      /(?:^|[.])(?:last_status|status|state|result|error|type)(?:$|[.])|(?:last_status|last_error|error_code)$/i.test(variable.name)
-      && (!query || variable.name.toLowerCase().includes(query))).slice(0, 40);
-  }
-  const bus = Number(target.slice(3));
-  if (!Number.isInteger(bus) || bus < 0 || bus > 2) return [];
-  const field = new RegExp(`can_diag_bus\\.?\\[${bus}\\]\\.([A-Za-z_][A-Za-z_0-9]*)$`, 'i');
-  const candidates = state.variables.filter(variable => field.test(variable.name));
-  candidates.sort((a, b) => canFields.indexOf(a.name.match(field)?.[1]) - canFields.indexOf(b.name.match(field)?.[1]));
-  const sampleCount = state.variables.find(variable => /(?:^|\.)can_diag_sample_count$/.test(variable.name));
-  return [...(sampleCount ? [sampleCount] : []), ...candidates.filter(variable => canFields.includes(variable.name.match(field)?.[1]))].slice(0, 40);
-}
-function canFindings(values, target) {
-  const get = name => {
-    const bus = target.slice(3);
-    const entry = values.find(item => item.name.endsWith(`.${name}`) && new RegExp(`can_diag_bus\\.?\\[${bus}\\]\\.`).test(item.name));
-    return entry?.value == null ? null : Number(entry.value);
-  };
-  const messages = [];
-  if (state.config.params?.value?.can_diag?.enabled === false) messages.push('当前板卡配置关闭了 can_diag；启用后重新编译并烧录才能读取板端指标。');
-  const sample = values.find(item => /can_diag_sample_count$/.test(item.name));
-  if (sample && Number(sample.value) === 0) messages.push('诊断采样计数为 0：可能尚未初始化 CAN，或定时采样尚未运行。');
-  if (get('state_bo') > 0) messages.push('总线当前 Bus Off：优先检查接线、终端电阻、波特率与对端状态。');
-  else if (get('state_ep') > 0) messages.push('总线当前 Error Passive：通信错误较多，查看 TEC/REC 与错误计数。');
-  else if (get('state_ew') > 0) messages.push('总线当前 Error Warning：错误计数已达到警告状态。');
-  if (get('ack_total') > 0) messages.push('累计出现过 ACK 错误：检查对端是否在线、接线及位时序。');
-  if (get('rx_overrun_total') > 0) messages.push('累计出现过接收 FIFO 溢出：检查接收处理和回调耗时。');
-  if (get('tx_attempts_total') === 0) messages.push('未记录到成功入队的发送帧；应用层可能尚未发起发送，或发送在入队前失败。');
-  else if (get('rx_frames_total') === 0) messages.push('已记录发送入队，但尚无接收帧；继续检查对端发送、过滤器和总线接线。');
-  if (!messages.length) messages.push('这些指标未指向明确故障；可结合状态字段、应用层回调与时间变化继续检查。');
-  return messages;
-}
-function statusFindings(values) {
-  const failures = values.filter(item => /\btypes::status\b/.test(item.type) && Number(item.value) > 0);
-  if (failures.length) return failures.slice(0, 8).map(item => {
-    const code = Number(item.value);
-    return `${item.name}: ${pnxStatusNames[code] || `状态码 ${code}`}。请沿该状态字段的写入点检查初始化、配置和调用链。`;
-  });
-  return ['未发现非零的 types::status 全局字段；局部函数返回值不在此快照中。'];
-}
-async function captureDiagnosticSnapshot() {
-  const target = $('diagnosticTarget').value;
-  const variables = diagnosticVariables(target);
-  const findings = $('diagnosticFindings'), details = $('diagnosticValues');
-  findings.replaceChildren(); details.replaceChildren();
-  if (!variables.length) {
-    $('diagnosticSummary').textContent = target === 'status' ? 'ELF 中没有可直接读取的状态全局标量。'
-      : 'ELF 中没有 can_diag_bus 字段；请确认固件启用了 CAN 诊断并包含 DWARF 信息。';
-    return;
-  }
-  $('diagnosticSnapshot').disabled = true;
-  try {
-    const result = await api('/api/debug/snapshot', { ids: variables.map(variable => variable.id) });
-    const read = new Map(result.values.map(item => [item.id, item.value]));
-    const rows = variables.map(variable => ({ name: variable.name, type: variable.type, value: read.get(variable.id) ?? null }));
-    $('diagnosticSummary').textContent = `${target === 'status' ? '状态字段' : `CAN${Number(target.slice(3)) + 1}`} · ${rows.length} 项 · ${new Date().toLocaleTimeString()}`;
-    findings.replaceChildren(...(target === 'status' ? statusFindings(rows) : canFindings(rows, target)).map(message => {
-      const item = document.createElement('p'); item.textContent = message; return item;
-    }));
-    details.replaceChildren(...rows.map(row => {
-      const item = document.createElement('div'); item.className = 'diagnostic-value';
-      const name = document.createElement('span'); name.textContent = `${row.name} · ${row.type}`; name.title = name.textContent;
-      const value = document.createElement('strong');
-      const decoded = /\btypes::status\b/.test(row.type) ? pnxStatusNames[Number(row.value)] : null;
-      value.textContent = row.value == null ? '不可用' : decoded ? `${row.value} (${decoded})` : String(row.value);
-      item.append(name, value); return item;
-    }));
-  } finally { $('diagnosticSnapshot').disabled = !state.connected; }
-}
 function updateDebugButtons() {
+  $('saveWatchConfig').disabled = $('loadWatchConfig').disabled = !state.workspace;
   $('debugState').textContent = state.debugAccess ? (state.debugPaused ? `已暂停：${state.debugReason || '断点'}` : '调试器已连接') : '未连接调试器';
   $('quickPause').disabled = !state.debugAccess || state.debugPaused;
   $('quickContinue').disabled = !state.debugAccess || !state.debugPaused;
   $('quickStep').disabled = !state.debugAccess || !state.debugPaused;
   $('quickStop').disabled = !state.debugAccess;
-  $('quickDebug').disabled = !state.projectRoot;
-  $('quickFlash').disabled = !state.projectRoot || !state.config.params;
-  $('flash').disabled = !state.projectRoot || !state.config.params;
-  $('attach').disabled = $('connectFlash').disabled = $('scopeAttach').disabled = $('scopeWriteConnect').disabled = !state.projectRoot;
+  const hasTarget = !!state.projectRoot || !!(state.workspace && state.projectProfile?.target.chip && state.projectProfile?.target.elf);
+  $('quickDebug').disabled = $('quickFlash').disabled = $('flash').disabled = !hasTarget;
+  $('quickDebug').title = buildBeforeConnect() ? '保存、编译并连接调试器' : '使用配置的 ELF 连接调试器';
+  $('quickFlash').title = buildBeforeConnect() ? '确认后编译并烧录' : '确认后烧录配置的 ELF';
+  $('attach').disabled = $('connectFlash').disabled = $('scopeAttach').disabled = $('scopeWriteConnect').disabled = !hasTarget;
+  for (const element of document.querySelectorAll('.debug-diagnostic-row,#diagnosticFindings,#diagnosticValues')) element.classList.toggle('hidden', !state.projectRoot);
+  const target = state.projectProfile?.target;
+  $('scopeTargetSummary').textContent = target?.chip && target?.elf
+    ? `${target.chip} · ${target.elf}`
+    : state.projectRoot ? '使用 PnX 板卡预设的 ELF 采集；添加变量后，在曲线设置中选择显示变量。'
+    : '普通工程同样支持曲线：打开文件夹 → 目标设置填写芯片和 ELF → 连接目标板 → 添加变量并分配曲线。';
   $('serialTest').disabled = false;
 }
+function captureWatchConfig() {
+  return {format:'pnx-watch',version:1,
+    variables:state.selected.map(id => ({expression:state.variableById.get(id)?.name,plotId:state.plotAssignments.get(id) || 'watch-only'})).filter(v=>v.expression),
+    groups:state.plotGroups.map(g=>({...g})), plots:state.plots.map(p=>({...p,groupId:p.groupId || 'default',seconds:plotView(p.id).seconds})),
+    activeGroup:state.activePlotGroup,columns:Number($('plotColumns').value),seconds:timeWindowSeconds($('plotTimeWindow').value),rate:Number($('scopeRate').value) || 1000};
+}
+function restoreWatchConfig(config) {
+  state.plotGroups=config.groups.map(g=>({...g})); state.plots=config.plots.map(p=>({...p})); state.activePlotGroup=config.activeGroup;
+  $('plotColumns').value=String(config.columns); $('plotTimeWindow').value=String(config.seconds); $('scopeRate').value=$('rate').value=String(config.rate);
+  state.plotViews.clear(); for(const p of config.plots) plotView(p.id).seconds=p.seconds;
+  nextPlotId=Math.max(2,...state.plots.map(p=>Number(p.id.replace('plot-',''))+1 || 2));
+  const byName=new Map();
+  for(const variable of state.variables.filter(v=>!v.unavailable)) {
+    if(byName.has(variable.name)) byName.set(variable.name,null); else byName.set(variable.name,variable);
+  }
+  state.selected=[]; state.plotAssignments.clear();
+  for(const entry of config.variables) {
+    let variable=byName.get(entry.expression);
+    if(!variable) {
+      variable={id:'saved:'+entry.expression,name:entry.expression,unavailable:true,writable:false,writeReason:'当前 ELF 未找到唯一同名变量，保留配置等待重新连接'};
+      state.variableById.set(variable.id,variable);
+    }
+    state.selected.push(variable.id); state.plotAssignments.set(variable.id,entry.plotId);
+  }
+  displayVariables(); displaySelectedVariables(); renderPlots(); updateLive();
+}
+async function loadWatchFile(quiet=false) {
+  if(!state.workspace) return;
+  try {
+    const {config}=await api('/api/watch-config');
+    if(config) { restoreWatchConfig(config); if(state.connected) scheduleAutoSampling(); log('已加载 pnx-watch.json'); }
+    else if(!quiet) log('当前工程尚未保存 pnx-watch.json');
+  } catch(error) { log(`查看配置加载失败：${error.message}`); }
+}
+$('saveWatchConfig').onclick=()=>perform(async()=>{
+  const result=await api('/api/watch-config',captureWatchConfig()); log(`查看配置已保存：${result.path}`);
+  await renderDirectory('', $('fileTree'));
+});
+$('loadWatchConfig').onclick=()=>perform(()=>loadWatchFile());
 async function connect(mock, allowFlash, allowDebug = false, switchView = true) {
+  const previousWatch = captureWatchConfig();
   const rate = Number(state.view === 'scope' ? $('scopeRate').value : $('rate').value) || 1000;
   $('rate').value = String(rate); $('scopeRate').value = String(rate);
   let result;
@@ -1191,11 +1250,14 @@ async function connect(mock, allowFlash, allowDebug = false, switchView = true) 
   }
   clearTimeout(liveTimer); liveTimer = null;
   setVariableCatalog(result.variables, result.tree); state.connected = true; state.flashAccess = allowFlash && !mock; state.debugAccess = (allowDebug || allowFlash) && !mock; state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null; stopRevision++; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
-  $('openVariablePicker').disabled = false; $('subscribe').disabled = false; $('disconnect').disabled = false; $('flash').disabled = !state.config.params;
-  displayVariables(); displaySelectedVariables(); updateConnection(); updateDebugButtons(); renderDebugPanel(); updateRecordUi(); renderPlots(); if (switchView) setView('scope'); log(`已连接：${mock ? '模拟目标' : result.board}，变量 ${result.variables.length} 个`, allowDebug ? 'debug' : allowFlash ? 'flash' : 'general');
+  $('openVariablePicker').disabled = false; $('subscribe').disabled = false; $('disconnect').disabled = false;
+  displayVariables(); displaySelectedVariables(); updateConnection(); updateDebugButtons(); renderDebugPanel(); updateRecordUi(); renderPlots(); if (switchView) setView('scope'); log(`已连接：${mock ? '模拟目标' : result.chip || result.board}，变量 ${result.variables.length} 个`, allowDebug ? 'debug' : allowFlash ? 'flash' : 'general');
+  restoreWatchConfig(previousWatch);
+  if(state.selected.length) scheduleAutoSampling();
   if (state.debugAccess && !allowFlash) await syncAllBreakpoints();
 }
 function receiveSamples(batch) {
+  if (!state.connected) return;
   state.lastSampleAt = performance.now();
   if (state.banks === 1 && state.streamEpoch !== batch.streamEpoch) {
     state.streamEpoch = batch.streamEpoch; state.series.clear(); state.points = []; state.firstTimestampNs = null; state.lastTimestampNs = 0; state.sampleCount = 0; state.rateWindow = [];
@@ -1257,22 +1319,22 @@ function plotFrame(width, height, ratio) {
 function drawPlotGrid(ctx, frame, ratio, axis, range) {
   ctx.lineWidth = ratio;
   ctx.font = `${10 * ratio}px Consolas, monospace`;
-  ctx.fillStyle = '#9aa7b8';
+  ctx.fillStyle = themeColor('#9aa7b8', '#526071');
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let i = 0; i <= axis.ticks; i++) {
     const value = axis.min + i * axis.step;
     const y = frame.top + (axis.ticks - i) / axis.ticks * frame.height;
-    ctx.strokeStyle = Math.abs(value) < axis.step / 10 ? '#485360' : '#2c323a';
+    ctx.strokeStyle = Math.abs(value) < axis.step / 10 ? themeColor('#485360','#8c98a6') : themeColor('#2c323a','#dce2e8');
     ctx.beginPath(); ctx.moveTo(frame.left, y); ctx.lineTo(frame.left + frame.width, y); ctx.stroke();
     if (frame.height / axis.ticks >= 14 * ratio || i % 2 === 0) ctx.fillText(plotTickLabel(value, axis.step), frame.left - 6 * ratio, y);
   }
-  ctx.strokeStyle = '#2c323a';
+  ctx.strokeStyle = themeColor('#2c323a', '#dce2e8');
   for (let i = 0; i <= 6; i++) {
     const x = frame.left + i * frame.width / 6; ctx.beginPath(); ctx.moveTo(x, frame.top); ctx.lineTo(x, frame.top + frame.height); ctx.stroke();
     if (Number.isFinite(range?.firstT) && Number.isFinite(range.maxT)) {
       const seconds = (range.minT + (range.maxT - range.minT) * i / 6 - range.firstT) / 1e9;
-      ctx.fillStyle = '#9aa7b8'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillStyle = themeColor('#9aa7b8', '#526071'); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText(`${seconds.toFixed(Math.abs(seconds) < 10 ? 1 : 0)}s`, x, frame.top + frame.height + 5 * ratio);
     }
   }
@@ -1300,7 +1362,7 @@ function drawSeriesPlot(ctx, card, width, height, frame, ratio) {
   const histories = ids.map(id => [id, range.data.series.get(id) || []]).filter(([, series]) => series.length);
   if (!histories.length) {
     drawPlotGrid(ctx, frame, ratio, plotAxis(NaN, NaN), range);
-    ctx.fillStyle = '#8491a2'; ctx.font = `${12 * ratio}px Consolas, monospace`; ctx.textAlign = 'center';
+    ctx.fillStyle = themeColor('#8491a2', '#657080'); ctx.font = `${12 * ratio}px Consolas, monospace`; ctx.textAlign = 'center';
     ctx.fillText(ids.length ? '等待实时数据' : '从左侧选择变量并分配到此曲线', width / 2, height / 2); ctx.textAlign = 'start'; return;
   }
   const { minT, maxT } = range;
@@ -1315,7 +1377,7 @@ function drawSeriesPlot(ctx, card, width, height, frame, ratio) {
   }
   if (!Number.isFinite(min)) {
     drawPlotGrid(ctx, frame, ratio, plotAxis(NaN, NaN), range);
-    ctx.fillStyle = '#8491a2'; ctx.font = `${12 * ratio}px Consolas, monospace`; ctx.textAlign = 'center';
+    ctx.fillStyle = themeColor('#8491a2', '#657080'); ctx.font = `${12 * ratio}px Consolas, monospace`; ctx.textAlign = 'center';
     ctx.fillText('当前时间窗口内无该页样本', width / 2, height / 2); ctx.textAlign = 'start'; return;
   }
   const axis = plotAxis(min, max); min = axis.min; max = axis.max;
@@ -1355,9 +1417,9 @@ async function exportPlot(card) {
   const plot = state.plots.find(item => item.id === card.dataset.plotId);
   if (!plot) throw new Error('Curve no longer exists');
   const output = document.createElement('canvas'); output.width = 1600; output.height = 900;
-  const ctx = output.getContext('2d'); ctx.fillStyle = '#17181d'; ctx.fillRect(0, 0, output.width, output.height);
-  ctx.fillStyle = '#e8e8eb'; ctx.font = 'bold 30px "Segoe UI", sans-serif'; ctx.fillText(plot.name, 42, 52);
-  ctx.fillStyle = '#9ca5b4'; ctx.font = '18px "Segoe UI", sans-serif'; ctx.fillText(card.querySelector('.plot-view-label').textContent, 42, 82);
+  const ctx = output.getContext('2d'); ctx.fillStyle = themeColor('#17181d', '#ffffff'); ctx.fillRect(0, 0, output.width, output.height);
+  ctx.fillStyle = themeColor('#e8e8eb', '#20252d'); ctx.font = 'bold 30px "Segoe UI", sans-serif'; ctx.fillText(plot.name, 42, 52);
+  ctx.fillStyle = themeColor('#9ca5b4', '#586575'); ctx.font = '18px "Segoe UI", sans-serif'; ctx.fillText(card.querySelector('.plot-view-label').textContent, 42, 82);
   ctx.save(); ctx.translate(0, 92); drawSeriesPlot(ctx, card, 1600, 680, plotFrame(1600, 680, 2), 2); ctx.restore();
   ctx.font = '17px Consolas, monospace'; let x = 42, y = 804;
   for (const id of card.plotIds) {
@@ -1366,7 +1428,7 @@ async function exportPlot(card) {
     if (x + width > 1550) { x = 42; y += 30; }
     if (y > 875) break;
     ctx.fillStyle = colors[(state.activeIndex.get(id) || 0) % colors.length]; ctx.fillRect(x, y - 12, 11, 11);
-    ctx.fillStyle = '#c5cad5'; ctx.fillText(name, x + 19, y); x += width + 18;
+    ctx.fillStyle = themeColor('#c5cad5', '#394655'); ctx.fillText(name, x + 19, y); x += width + 18;
   }
   const blob = await new Promise(resolve => output.toBlob(resolve, 'image/png'));
   if (!blob) throw new Error('PNG export failed');
@@ -1388,12 +1450,14 @@ async function init() {
   if (savedToolchain.configured) showToolchain(savedToolchain.configured, '已配置，可直接编译。');
   applyRecordStatus(await api('/api/record/status'));
   if (workspace.root) { state.workspace = workspace.root; loadBreakpoints(); $('workspaceLabel').textContent = workspace.root; $('folderRoot').textContent = workspace.root; await renderDirectory('', $('fileTree')); }
-  if (info.projectRoot) await loadBoard(); else await loadBuildPresets();
+  await loadProjectProfile();
+  await loadWatchFile(true);
+  if (state.projectRoot) await loadBoard(); else await loadBuildPresets();
   const events = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
   events.addEventListener('status', event => { const message = JSON.parse(event.data); $('status').textContent = message; if (message === 'Disconnected' || message.startsWith('Adapter exited:')) resetConnectionUI(); });
   events.addEventListener('log', event => { const data = JSON.parse(event.data); log(typeof data === 'string' ? data : data.text, data.channel || 'general'); });
   events.addEventListener('samples', event => receiveSamples(JSON.parse(event.data)));
-  events.addEventListener('catalog', event => { const payload = JSON.parse(event.data); setVariableCatalog(payload.variables || [], payload.tree || []); displayVariables(); displaySelectedVariables(); });
+  events.addEventListener('catalog', event => { const payload = JSON.parse(event.data); if (!payload.variables?.length) return; const saved = captureWatchConfig(); setVariableCatalog(payload.variables, payload.tree || []); restoreWatchConfig(saved); });
   events.addEventListener('debug', event => { const data = JSON.parse(event.data); perform(() => handleDebugEvent(data)); });
   events.addEventListener('record', event => applyRecordStatus(JSON.parse(event.data)));
   new ResizeObserver(() => scheduleDraw(true)).observe($('plotGrid'));
@@ -1495,6 +1559,45 @@ document.addEventListener('keydown', event => {
 $('scopeRate').onchange = () => { $('rate').value = $('scopeRate').value; };
 $('rate').onchange = () => { $('scopeRate').value = $('rate').value; };
 $('preset').onchange = () => { state.preset = $('preset').value; };
+async function loadProjectProfile() {
+  state.projectProfile = await api('/api/project-settings');
+  state.projectRoot = state.projectProfile.projectRoot;
+  updateDebugButtons(); updateConfigFrame();
+}
+$('projectSettings').onclick = () => perform(async () => {
+  await loadProjectProfile(); const profile = state.projectProfile;
+  $('projectSettingsRoot').textContent = profile.root || '请先打开工程文件夹';
+  $('targetChip').value = profile.target.chip; $('targetElf').value = profile.target.elf; $('targetBuildFirst').checked = profile.target.buildBeforeDebug;
+  $('taskExecutable').value = profile.build.executable; $('taskArguments').value = JSON.stringify(profile.build.args);
+  $('projectPluginList').replaceChildren(...profile.availablePlugins.map(plugin => {
+    const label = document.createElement('label'), box = document.createElement('input'); box.type = 'checkbox'; box.dataset.pluginId = plugin.id; box.checked = plugin.enabled;
+    if (plugin.id === 'pnx') box.id = 'pnxPluginEnabled';
+    label.append(box, document.createTextNode(`${plugin.name} · API ${plugin.apiVersion}${plugin.detected ? ' · 已识别工程' : ''}`)); return label;
+  }));
+  $('pnxPluginHint').textContent = profile.pnxDetected ? '已识别 PnX 工程，可按工程启用或关闭。' : '当前目录不符合 PnX config 结构；通用调试不需要此插件。';
+  $('projectSettingsError').textContent = ''; $('projectSettingsDialog').showModal();
+});
+$('detectTarget').onclick = () => perform(async () => {
+  const found=await api('/api/project-detection');
+  $('detectedElf').replaceChildren(option('','选择发现的 ELF'),...found.candidates.map(item=>option(item.elf,item.elf)));
+  if(found.chip) $('targetChip').value=found.chip;
+  if(found.elf) {$('targetElf').value=found.elf;$('detectedElf').value=found.elf;}
+  $('detectionHint').textContent=found.ambiguous?'发现多个 ELF，请选择与板上固件一致的文件。':`识别来源：${found.sources.join('、') || '工程 ELF 扫描'}；发现 ${found.candidates.length} 个 ELF。`;
+});
+$('detectedElf').onchange=()=>{if($('detectedElf').value)$('targetElf').value=$('detectedElf').value;};
+$('scopeTargetSettings').onclick = () => $('projectSettings').onclick();
+$('projectSettingsCancel').onclick = () => $('projectSettingsDialog').close();
+$('projectSettingsForm').onsubmit = async event => {
+  event.preventDefault();
+  try {
+    const args = JSON.parse($('taskArguments').value || '[]');
+    const profile = await api('/api/project-settings', { plugins: Object.fromEntries([...$('projectPluginList').querySelectorAll('input')].map(box => [box.dataset.pluginId, box.checked])), target:{chip:$('targetChip').value,elf:$('targetElf').value,buildBeforeDebug:$('targetBuildFirst').checked},build:{executable:$('taskExecutable').value,args} });
+    resetConnectionUI(); state.projectProfile = profile; state.projectRoot = profile.projectRoot; state.config = {}; state.hardware = {};
+    if (state.projectRoot) await loadBoard(); else { $('hardware').replaceChildren(); fillMotor(); await loadBuildPresets(); }
+    updateConfigFrame(); updateDebugButtons(); $('projectSettingsDialog').close();
+    log('工程设置已保存；旧调试连接已关闭。');
+  } catch (error) { $('projectSettingsError').textContent = error.message; }
+};
 $('reload').onclick = () => perform(state.projectRoot ? loadBoard : loadBuildPresets);
 $('motor').onchange = showMotor;
 $('saveMotor').onclick = () => perform(saveMotor);
@@ -1503,11 +1606,11 @@ $('showParams').onclick = () => editJson('params');
 $('closeJson').onclick = () => $('editor').classList.add('hidden');
 $('saveJson').onclick = () => perform(saveJson);
 $('configure').onclick = () => perform(async () => { activateTerminal('build'); const result = await api('/api/configure', { preset: state.preset }); log(`配置完成：${result.buildDir || state.preset}`, 'build'); });
-async function buildCurrent() { activateTerminal('build'); await saveDirtyFiles(); const result = await api('/api/build', { preset: state.preset }); log(`编译完成：${result.elf || result.buildDir || state.preset}`, 'build'); }
+async function buildCurrent() { activateTerminal('build'); await saveDirtyFiles(); const result = await api('/api/build', { preset: state.preset }); log(`编译完成：${result.elf || result.buildDir || state.preset}`, 'build'); await loadProjectProfile(); await renderDirectory('', $('fileTree')); }
 $('build').onclick = () => perform(buildCurrent);
 $('quickConfigure').onclick = $('configure').onclick;
 $('quickBuild').onclick = $('build').onclick;
-$('quickDebug').onclick = () => perform(async () => { await buildCurrent(); activateTerminal('debug'); await connect(false, false, true, false); });
+$('quickDebug').onclick = () => perform(async () => { if (buildBeforeConnect()) await buildCurrent(); activateTerminal('debug'); await connect(false, false, true, false); });
 for (const [id, command] of [['quickPause','pause'],['quickContinue','continue'],['quickStep','next']]) $(id).onclick = () => perform(async () => { activateTerminal('debug'); await api('/api/debug', { command }); log(`调试命令完成：${command}`, 'debug'); });
 $('jumpToStop').onclick = () => perform(async () => { if (state.stoppedAt?.path && state.stoppedAt.line) await navigateTo({ path: state.stoppedAt.path, line: state.stoppedAt.line }, false); });
 $('diagnosticSnapshot').onclick = () => perform(captureDiagnosticSnapshot);
@@ -1518,11 +1621,12 @@ $('connectFlash').onclick = () => perform(() => connect(false, true));
 $('scopeMock').onclick = () => perform(() => connect(true, false));
 $('scopeAttach').onclick = () => perform(() => connect(false, false));
 $('scopeWriteConnect').onclick = () => perform(() => connect(false, false, true));
+function buildBeforeConnect() { return state.projectProfile?.target.buildBeforeDebug || (!!state.projectRoot && !state.projectProfile?.target.elf); }
 async function flashCurrent() {
-  if (!confirm(`编译并烧录 ${state.preset} 的 ELF，随后复位目标板？`)) return;
+  if (!(await confirmAction(`烧录 ${state.projectProfile?.target.elf || state.preset} 的 ELF，随后复位目标板？`))) return;
   const motorDemo = state.config.params?.value?.test?.auto_run_on_boot && state.config.params?.value?.test?.motor_demo;
-  if (motorDemo && !confirm('当前配置启用了 motor_demo，复位后可能驱动电机。确认继续？')) return;
-  await buildCurrent();
+  if (motorDemo && !(await confirmAction('当前配置启用了 motor_demo，复位后可能驱动电机。确认继续？'))) return;
+  if (buildBeforeConnect()) await buildCurrent();
   activateTerminal('flash');
   await connect(false, true, false, false);
   await api('/api/flash', { preset: state.preset, ackMotorMotion: !!motorDemo });
@@ -1534,11 +1638,12 @@ async function disconnect() {
   await api('/api/disconnect', {});
   resetConnectionUI();
 }
-function resetConnectionUI() {
+function resetConnectionUI(preserveWatch = true) {
   if ($('writeDialog').open) $('writeDialog').close();
   variableToWrite = undefined;
+  if (!preserveWatch) { state.selected=[]; setVariableCatalog([],[]); state.expandedVariables.clear(); state.plotAssignments.clear(); state.plotGroups=[{id:'default',name:'默认组'}]; state.activePlotGroup='default'; state.plots=[{id:'plot-1',name:'曲线 1',groupId:'default'}]; }
   clearTimeout(liveTimer); liveTimer = null;
-  state.connected = false; state.flashAccess = false; state.debugAccess = false; state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null; stopRevision++; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.latest = []; state.points = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; setVariableCatalog([], []); state.expandedVariables.clear(); state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = 0; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); state.recording = false; updateScopeNotice();
+  state.connected = false; state.flashAccess = false; state.debugAccess = false; state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null; stopRevision++; state.activeIds = []; state.activeIndex.clear(); state.latest = []; state.points = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = 0; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); state.recording = false; updateScopeNotice();
   if ($('variablePicker').open) $('variablePicker').close();
   $('disconnect').disabled = true; $('flash').disabled = true; $('openVariablePicker').disabled = true; $('subscribe').disabled = true;
   $('metrics').textContent = '尚未采集数据'; state.breakpointResults.clear(); updateConnection(); updateDebugButtons(); renderDebugPanel(); $('diagnosticFindings').replaceChildren(); $('diagnosticValues').replaceChildren(); displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();
@@ -1548,8 +1653,13 @@ $('quickStop').onclick = () => perform(async () => { activateTerminal('debug'); 
 $('scopeDisconnect').onclick = () => perform(disconnect);
 $('openVariablePicker').onclick = () => { $('search').value = ''; displayVariables(); $('variablePicker').showModal(); $('search').focus(); };
 $('closeVariablePicker').onclick = () => $('variablePicker').close();
-$('search').oninput = () => { $('variables').scrollTop = 0; displayVariables(); };
-$('selectMatches').onclick = () => { if (!$('search').value.trim()) return; changeVariableSelection(state.matchingVariableIds, true); };
+$('search').oninput = () => {
+  clearTimeout(pickerSearchTimer);
+  pickerSearchTimer = setTimeout(() => { pickerPage = 0; $('variables').scrollTop = 0; displayVariables(); }, 120);
+};
+$('variablePrevious').onclick = () => { pickerPage--; displayVariables(); $('variables').scrollTop = 0; };
+$('variableNext').onclick = () => { pickerPage++; displayVariables(); $('variables').scrollTop = 0; };
+$('selectMatches').onclick = () => { if (!$('search').value.trim()) return; clearTimeout(pickerSearchTimer); displayVariables(); changeVariableSelection(state.matchingVariableIds, true); };
 let autoSampleTimer, samplingUpdate = Promise.resolve();
 function scheduleAutoSampling() {
   clearTimeout(autoSampleTimer);
@@ -1561,7 +1671,7 @@ function scheduleAutoSampling() {
 async function applySampling() {
   if (state.recording) applyRecordStatus(await api('/api/record/stop', {}));
   const rate = Number($('scopeRate').value) || 1000; $('rate').value = String(rate);
-  const result = await api('/api/subscribe', { ids: [...state.selected], rate });
+  const result = await api('/api/subscribe', { ids: state.selected.filter(id=>!state.variableById.get(id)?.unavailable), rate });
   clearTimeout(liveTimer); liveTimer = null;
   state.activeIds = result.ids; state.activeIndex = new Map(result.ids.map((id, index) => [id, index])); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = result.banks; state.bankSize = result.bankSize; state.bankDwellMs = result.dwellMs; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = performance.now(); state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
   $('metrics').textContent = result.ids.length ? '等待实时数据' : '尚未选择变量'; displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();
@@ -1588,10 +1698,10 @@ $('renamePlotGroup').onclick = async () => {
   const name = await askPlotGroupName(group.name); if (!name) return;
   group.name = name; renderPlots(); displaySelectedVariables(); displayVariables(); savePlotLayout();
 };
-$('removePlotGroup').onclick = () => {
+$('removePlotGroup').onclick = async () => {
   if (state.plotGroups.length < 2) return;
   const id = state.activePlotGroup, group = state.plotGroups.find(item => item.id === id);
-  if (!confirm(`删除“${group.name}”？组内曲线将移到另一组，保留变量分配。`)) return;
+  if (!(await confirmAction(`删除“${group.name}”？组内曲线将移到另一组，保留变量分配。`))) return;
   state.plotGroups = state.plotGroups.filter(item => item.id !== id); state.activePlotGroup = state.plotGroups[0].id;
   for (const plot of state.plots) if ((plot.groupId || 'default') === id) plot.groupId = state.activePlotGroup;
   renderPlots(); displaySelectedVariables(); displayVariables(); savePlotLayout();
@@ -1608,4 +1718,23 @@ $('recordStop').onclick = () => perform(async () => { applyRecordStatus(await ap
 $('exportCsv').onclick = () => { if (!state.recordFile) return; const link = document.createElement('a'); link.href = `/api/record/csv?token=${encodeURIComponent(token)}`; link.download = state.recordFile.split(/[\\/]/).at(-1); document.body.append(link); link.click(); link.remove(); };
 $('plotColumns').onchange = () => { renderPlots(); savePlotLayout(); };
 $('serialTest').onclick = () => perform(async () => { activateTerminal('diagnostics'); await api('/api/serial-test', { port: $('serialPort').value, baud: Number($('baud').value) }); log('串口诊断已完成', 'diagnostics'); });
+const darkCurveColors = [...colors];
+function themeColor(dark, light) { return document.documentElement.dataset.theme === 'light' ? light : dark; }
+function syncConfigTheme() {
+  const doc = $('configFrame').contentDocument;
+  if(doc) doc.documentElement.dataset.theme = document.documentElement.dataset.theme || 'dark';
+}
+function applyTheme(theme) {
+  const light=theme==='light'; document.documentElement.dataset.theme=light?'light':'dark';
+  try {localStorage.setItem('pnx-theme',light?'light':'dark');} catch {}
+  $('themeToggle').textContent=light?'深色':'浅色';
+  $('themeToggle').title=light?'切换深色模式':'切换浅色模式';
+  $('themeToggle').setAttribute('aria-label',$('themeToggle').title);
+  colors.splice(0,colors.length,...(light?['#087c50','#a55700','#0969bd','#bb2455','#7147bc','#807000','#007c86','#a42d93']:darkCurveColors));
+  syncConfigTheme(); displayVariables(); displaySelectedVariables(); renderPlots(); scheduleDraw(true);
+}
+$('themeToggle').onclick=()=>applyTheme(document.documentElement.dataset.theme==='light'?'dark':'light');
+$('configFrame').addEventListener('load',syncConfigTheme);
+let initialTheme='dark'; try {initialTheme=localStorage.getItem('pnx-theme') || 'dark';} catch {}
+applyTheme(initialTheme);
 init().catch(error => log(`启动失败：${error.message}`));

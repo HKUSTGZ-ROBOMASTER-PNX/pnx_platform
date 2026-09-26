@@ -218,6 +218,34 @@ try {
   assert.equal(await evaluate('window.__smokeBuildSawClean'), true, 'Build started before dirty tabs were saved');
   const genericState = await evaluate("({ preset: state.preset, pnx: state.projectRoot, debugDisabled: document.getElementById('quickDebug').disabled })");
   assert.deepEqual(genericState, { preset: 'Debug', pnx: null, debugDisabled: true });
+  const genericTarget = await evaluate(`(async () => {
+    await document.getElementById('projectSettings').onclick();
+    document.getElementById('targetChip').value = 'STM32F407VG';
+    document.getElementById('targetElf').value = 'build/custom-name.elf';
+    document.getElementById('pnxPluginEnabled').checked = false;
+    document.getElementById('taskExecutable').value = 'make';
+    document.getElementById('taskArguments').value = '["-j4"]';
+    await document.getElementById('projectSettingsForm').onsubmit({preventDefault(){}});
+    const saved = await api('/api/project-settings');
+    const result = {chip:saved.target.chip,elf:saved.target.elf,pnx:saved.plugins.pnx,debugEnabled:!document.getElementById('quickDebug').disabled,flashEnabled:!document.getElementById('quickFlash').disabled,buildFirst:buildBeforeConnect()};
+    if (document.getElementById('scopeAttach').disabled) throw new Error('Generic scope connect is disabled');
+    await connect(true, false);
+    changeVariableSelection(state.variables.slice(0,2).map(variable => variable.id), true);
+    const id = state.selected[0]; state.plotAssignments.set(id, state.plots[0].id);
+    await document.getElementById('subscribe').onclick();
+    await new Promise(resolve => setTimeout(resolve, 450));
+    renderPlots();
+    if (!state.sampleCount || !state.series.get(id)?.length || ![...document.getElementById('plotGrid').children].some(card => card.plotIds.includes(id))) throw new Error('Generic project did not acquire and plot samples');
+    if (plotVariableIds().length !== 1) throw new Error('Watch-only variable incorrectly plotted');
+    await api('/api/record/start', {}); await new Promise(resolve => setTimeout(resolve, 150));
+    const capture = await api('/api/record/stop', {}); if (!capture.rows) throw new Error('Generic project CSV is empty');
+    await disconnect();
+    await api('/api/project-settings',{plugins:{pnx:false},target:{},build:{}});
+    await loadProjectProfile(); await loadBuildPresets();
+    return result;
+  })()`);
+  assert.deepEqual(genericTarget,{chip:'STM32F407VG',elf:'build/custom-name.elf',pnx:false,debugEnabled:true,flashEnabled:true,buildFirst:false});
+
   assert.match(readFileSync(path.join(fixture, 'first.cpp'), 'utf8'), /edited/);
   assert.match(readFileSync(path.join(fixture, 'second.h'), 'utf8'), /edited/);
 
@@ -304,7 +332,7 @@ try {
   })()`);
 
   const workflows = await evaluate(`(async () => {
-    const priorFetch = window.fetch, priorConfirm = window.confirm, calls = [];
+    const priorFetch = window.fetch, priorConfirm = confirmAction, calls = [];
     const response = value => Promise.resolve(new Response(JSON.stringify(value), { status: 200,
       headers: { 'Content-Type': 'application/json' } }));
     window.fetch = (input, init) => {
@@ -317,7 +345,7 @@ try {
       if (input === '/api/flash') { calls.push('flash'); return response({ ok: true }); }
       return priorFetch(input, init);
     };
-    window.confirm = () => true;
+    confirmAction = async () => true;
     try {
       await document.getElementById('quickDebug').onclick();
       const debug = [...calls]; calls.length = 0;
@@ -334,7 +362,7 @@ try {
       const failedBuild = [...calls];
       document.getElementById('log').textContent = '';
       return { debug, flash, failedBuild };
-    } finally { window.fetch = window.__smokeRealFetch; window.confirm = priorConfirm; }
+    } finally { window.fetch = window.__smokeRealFetch; confirmAction = priorConfirm; }
   })()`);
   assert.deepEqual(workflows.debug, ['build', 'connect:debug']);
   assert.deepEqual(workflows.flash, ['build', 'connect:flash', 'flash']);
@@ -581,6 +609,20 @@ try {
   })()`);
   assert.deepEqual(deepTree, { collapsed: true, firstLevel: 2, leafCount: 3, allSelected: true,
     searchPath: 3, searchSelected: ['deep.speed'] });
+  await evaluate("void (window.__confirmationResult = confirmAction('测试确认后的搜索输入'))");
+  await evaluate("document.querySelector('.confirmation-dialog .primary').click()");
+  assert.equal(await evaluate("window.__confirmationResult"), true);
+  await evaluate("document.getElementById('openVariablePicker').click()");
+  const searchPoint = await evaluate(`(() => { const r = document.getElementById('search').getBoundingClientRect(); return {x:r.x+20,y:r.y+r.height/2}; })()`);
+  await call('Input.dispatchMouseEvent', {type:'mousePressed', ...searchPoint, button:'left', clickCount:1});
+  await call('Input.dispatchMouseEvent', {type:'mouseReleased', ...searchPoint, button:'left', clickCount:1});
+  await call('Input.insertText', { text: 'speed' });
+  await pause(180);
+  assert.deepEqual(await evaluate(`({ value: document.getElementById('search').value,
+    focused: document.activeElement.id, ids: state.matchingVariableIds })`),
+    { value: 'speed', focused: 'search', ids: ['deep.speed'] });
+  await evaluate("document.getElementById('closeVariablePicker').click(); document.getElementById('search').value = ''; displayVariables()");
+  await evaluate("document.getElementById('openVariablePicker').click()");
   const watchTree = await evaluate(`(async () => {
     displaySelectedVariables(); state.latestById.set('deep.speed',12.5); updateLive();
     const branches=document.querySelectorAll('#selectedVariables details').length;
@@ -629,7 +671,7 @@ try {
   assert.equal(variableControls.after, variableControls.before);
   assert.equal(variableControls.dialogOpened && variableControls.closed && variableControls.selectedUnchanged, true);
   assert.deepEqual(variableControls.writeRequest, { id: 'global-0', value: '1.25' });
-  await evaluate("document.getElementById('closeVariablePicker').click()");
+  await evaluate("document.getElementById('closeVariablePicker').click(); document.getElementById('search').value = ''; displayVariables()");
   const independentWatch = await evaluate(`(async () => {
     const id=state.selected[0], previousFetch=window.fetch, requests=[];
     displaySelectedVariables();
@@ -748,6 +790,93 @@ try {
   assert.deepEqual(groupChecks, {created:true, multiple:true, switched:true, actions:true});
   console.log('Curve group switching and variable actions passed');
   console.log('ST-Link driver UI checks passed');
+  await evaluate("setView('editor')");
+  const chrome=await evaluate(`({top:document.querySelector('.titlebar').getBoundingClientRect().height,tools:document.querySelector('.editor-toolbar').getBoundingClientRect().height,statusInFooter:document.getElementById('status').parentElement.id==='statusBar'})`);
+  assert.deepEqual(chrome,{top:34,tools:30,statusInFooter:true});
+  const chromeImage=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  writeFileSync(path.join(root,'.cache','electron-ui-compact-editor.png'),Buffer.from(chromeImage.data,'base64'));
+
+  const themeCheck=await evaluate(`(() => {
+    document.getElementById('themeToggle').click();
+    return {theme:document.documentElement.dataset.theme,saved:localStorage.getItem('pnx-theme'),background:getComputedStyle(document.getElementById('editorSurface')).backgroundColor,config:document.getElementById('configFrame').contentDocument.documentElement.dataset.theme,axis:themeColor('#dark','#light')};
+  })()`);
+  assert.deepEqual(themeCheck,{theme:'light',saved:'light',background:'rgb(255, 255, 255)',config:'light',axis:'#light'});
+  await pause(200);
+  assert.deepEqual(await evaluate(`(() => {const style=getComputedStyle(document.getElementById('quickBuild'));return {background:style.backgroundColor,color:style.color};})()`),{background:'rgba(0, 0, 0, 0)',color:'rgb(54, 91, 181)'});
+  assert.equal(await evaluate("getComputedStyle(document.getElementById('explorer')).backgroundColor"),'rgb(243, 244, 246)');
+  assert.equal(await evaluate("getComputedStyle(document.getElementById('log')).backgroundColor"),'rgb(255, 255, 255)');
+  await pause(150);
+  const lightImage=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  writeFileSync(path.join(root,'.cache','electron-ui-light.png'),Buffer.from(lightImage.data,'base64'));
+  await evaluate("document.getElementById('themeToggle').click()");
+  assert.equal(await evaluate("document.documentElement.dataset.theme"),'dark');
+  const allPause = await evaluate(`(async () => {
+    await connect(true,false); state.selected=state.variables.slice(0,2).map(v=>v.id); await applySampling();
+    await new Promise(resolve=>setTimeout(resolve,200));
+    // Include a hidden group and a plot that was paused individually earlier.
+    plotView(state.plots[0].id).paused=true;
+    document.getElementById('pauseAllPlots').click();
+    const time=state.lastTimestampNs, samples=state.sampleCount;
+    const aligned=state.plots.every(p=>plotView(p.id).paused && plotView(p.id).anchorNs===time);
+    const frozen=plotView(state.plots[0].id).snapshot;
+    const count=[...frozen.series.values()].reduce((n,a)=>n+a.length,0);
+    await new Promise(resolve=>setTimeout(resolve,200));
+    const unchanged=[...frozen.series.values()].reduce((n,a)=>n+a.length,0)===count;
+    const sampling=state.sampleCount>samples;
+    state.activePlotGroup=state.plotGroups.at(-1).id; renderPlots();
+    const hiddenPaused=[...document.querySelectorAll('.plot-pause')].every(b=>b.textContent==='继续');
+    document.getElementById('pauseAllPlots').click();
+    const resumed=state.plots.every(p=>!plotView(p.id).paused && plotView(p.id).snapshot===null);
+    return {aligned,unchanged,sampling,hiddenPaused,resumed};
+  })()`);
+  assert.deepEqual(allPause,{aligned:true,unchanged:true,sampling:true,hiddenPaused:true,resumed:true});
+  console.log('All plots pause:',JSON.stringify(allPause));
+  const watchPersistence = await evaluate(`(async () => {
+    await connect(true,false);
+    const variable=state.variables[0]; state.selected=[variable.id]; state.plotAssignments.set(variable.id,state.plots[0].id);
+    const before=captureWatchConfig();
+    await api('/api/watch-config',before);
+    await disconnect(); await new Promise(resolve=>setTimeout(resolve,100));
+    const retained=captureWatchConfig().variables;
+    state.selected=[]; setVariableCatalog([],[]);
+    await loadWatchFile();
+    const offline=captureWatchConfig().variables;
+    await connect(true,false);
+    const resolved=state.selected.every(id=>!state.variableById.get(id)?.unavailable);
+    const after=captureWatchConfig();
+    const grid=document.getElementById('plotGrid').getBoundingClientRect();
+    const scope=document.getElementById('scopeArea').getBoundingClientRect();
+    await disconnect();
+    return {before:before.variables,retained,offline,after:after.variables,resolved,toolbarHeight:grid.top-scope.top};
+  })()`);
+  assert.deepEqual(watchPersistence.retained,watchPersistence.before);
+  assert.deepEqual(watchPersistence.offline,watchPersistence.before);
+  assert.deepEqual(watchPersistence.after,watchPersistence.before);
+  assert.equal(watchPersistence.resolved,true);
+  assert.ok(watchPersistence.toolbarHeight < 160);
+  console.log('Workspace watch persistence:',JSON.stringify(watchPersistence));
+  const largeSearch = await evaluate(`(() => {
+    const vars = Array.from({length:32000}, (_,i) => ({id:'perf-'+i,name:'sensor.channel_'+i,type:'float',writable:true,address:0x20000000+i*4}));
+    setVariableCatalog(vars); state.selected=[]; state.connected=true; state.debugAccess=false;
+    document.getElementById('search').value='sensor';
+    const start=performance.now(); displayVariables();
+    const elapsed=performance.now()-start;
+    const rows=document.querySelectorAll('#variables .variable-leaf').length;
+    const total=state.matchingVariableIds.length;
+    document.getElementById('variableNext').click();
+    const next=document.querySelector('#variables input').value;
+    changeVariableSelection(['perf-0'],true);
+    const watch=document.querySelector('#selectedVariables .selected-variable-row');
+    const reason=watch.querySelector('.variable-write-reason').textContent;
+    const upgrade=[...watch.querySelectorAll('button')].some(b=>b.textContent==='切换可写连接');
+    document.getElementById('search').value='channel_31999'; displayVariables();
+    return {rows,total,next,elapsed,reason,upgrade,match:state.matchingVariableIds};
+  })()`);
+  assert.equal(largeSearch.rows,200); assert.equal(largeSearch.total,32000);
+  assert.equal(largeSearch.next,'perf-200'); assert.equal(largeSearch.upgrade,true);
+  assert.match(largeSearch.reason,/只读采样/); assert.deepEqual(largeSearch.match,['perf-31999']);
+  console.log('Large catalog search:',JSON.stringify(largeSearch));
+
   await evaluate('window.close()');
   closedByTest = true;
 } finally {

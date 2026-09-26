@@ -2,7 +2,7 @@ import path from 'node:path';
 import { existsSync, realpathSync, readdirSync, readFileSync, statSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 
-const OMIT = new Set(['.git', 'node_modules', 'target', 'build', 'dist', '.cache']);
+const OMIT = new Set(['.git', 'node_modules', 'target', 'dist', '.cache']);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
 export class Workspace {
@@ -12,7 +12,7 @@ export class Workspace {
     const root = realpathSync(folder);
     if (!statSync(root).isDirectory()) throw new Error('Selected path is not a folder');
     this.root = root;
-    return { root, isPnx: existsSync(path.join(root, 'CMakePresets.json')) && existsSync(path.join(root, 'configs', 'boards')) };
+    return { root };
   }
   resolve(relative = '') {
     if (!this.root) throw new Error('Open a folder first');

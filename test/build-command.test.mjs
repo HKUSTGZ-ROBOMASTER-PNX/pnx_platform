@@ -53,9 +53,11 @@ test('configure and build API executes the selected CMake preset', { timeout: 30
     assert.match(output, new RegExp(`--parallel ${Math.max(1, Math.min(8, availableParallelism()))}`));
     const configured = await post('/api/configure');
     assert.equal(built.buildDir, configured.buildDir);
-    assert.ok(built.buildDir.startsWith(path.join(fixture, 'build', 'pnx-platform') + path.sep));
+    assert.equal(built.buildDir, path.join(fixture, 'build', 'h723-debug'));
     assert.ok(existsSync(path.join(built.buildDir, 'firmware-built')));
-    assert.equal(readFileSync(stale, 'utf8'), 'CMAKE_HOME_DIRECTORY:INTERNAL=D:/old-workspace/project\n');
+    assert.ok(!readFileSync(stale, 'utf8').includes('D:/old-workspace/project'));
+    const files = await (await fetch(`${origin}/api/workspace/list`, {headers:{'X-PnX-Token':token}})).json();
+    assert.ok(files.entries.some(entry => entry.name === 'build' && entry.directory));
 
     const generic = path.join(root, '.cache', `generic-workspace-fixture-${process.pid}`);
     mkdirSync(generic, { recursive: true });
@@ -67,7 +69,7 @@ test('configure and build API executes the selected CMake preset', { timeout: 30
     assert.deepEqual(selection.presets, ['Debug']);
     assert.equal(selection.isPnx, false);
     const genericBuild = await post('/api/build', { preset: 'Debug' });
-    assert.ok(genericBuild.buildDir.startsWith(path.join(generic, 'build', 'pnx-platform') + path.sep));
+    assert.equal(genericBuild.buildDir, path.join(generic, 'build', 'Debug'));
     assert.ok(existsSync(path.join(genericBuild.buildDir, 'generic-built')));
     assert.equal(genericBuild.elf, undefined);
   } finally {

@@ -1,10 +1,9 @@
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { ROOT as root } from '../../paths.mjs';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const schema = JSON.parse(readFileSync(path.join(root, 'config', 'params.schema.json')));
-const defaultData = JSON.parse(readFileSync(path.join(root, 'config', 'defaults.json')));
+const schema = JSON.parse(readFileSync(path.join(root, 'src', 'plugins', 'pnx', 'params.schema.json')));
+const defaultData = JSON.parse(readFileSync(path.join(root, 'src', 'plugins', 'pnx', 'defaults.json')));
 export const bindingKinds = { uart_ports: 'uart', can_buses: 'can', spi_buses: 'spi', adc_channels: 'adc', gpio_inputs: 'gpio_input_role', gpio_outputs: 'gpio_output_role' };
 const models = ['dji_m2006','dji_m3508','dji_gm6020','dji_xroll','dm_dm4310','dm_dm8009p','lk_lk8016','lk_lk9025'];
 export const motorFields = [

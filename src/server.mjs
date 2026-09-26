@@ -8,14 +8,19 @@ import { fileURLToPath } from 'node:url';
 import { DapSession, listProbes, resolveProbeSelection } from './dap.mjs';
 import { globalScalars, globalTree, checkedWriteValue } from './global-variables.mjs';
 import { SubscriptionBanks } from './subscription-banks.mjs';
+import { loadWatchConfig, saveWatchConfig } from './watch-config.mjs';
 import { Workspace } from './workspace.mjs';
 import { CsvRecorder } from './csv-recorder.mjs';
 import { scanToolchain, validateToolchain, verifyToolchain, toolchainPathDirectories, useToolchain, loadToolchain, saveToolchain, addToWindowsUserPath } from './toolchain.mjs';
 import { findDefinitions } from './symbols.mjs';
 import { checkStlinkDriver } from './stlink-driver.mjs';
 import { initializerEvidence, markInitializedGlobals, verifyInitializer } from './initialized-globals.mjs';
-import { ROOT, BACKEND, BOARDS, boardPaths, presetBoard } from './paths.mjs';
-import { bindingKinds, bindingValue, boardDefaults, fields, get, motorFields, motorModes, parameterActive, setPath, testRequirements, validate } from './config-editor.mjs';
+import { ROOT, BACKEND } from './paths.mjs';
+import { BOARDS, boardPaths, presetBoard, detect as isPnxProject } from './plugins/pnx/project.mjs';
+import { pluginCatalog } from './plugins/registry.mjs';
+import { detectProjectTarget } from './target-detection.mjs';
+import { ProjectSettings, resolveTarget } from './project-settings.mjs';
+import { bindingKinds, bindingValue, boardDefaults, fields, get, motorFields, motorModes, parameterActive, setPath, testRequirements, validate } from './plugins/pnx/config-editor.mjs';
 
 const token = randomBytes(24).toString('hex');
 const clients = new Set();
@@ -27,7 +32,6 @@ let selectedSet = new Set();
 let subscriptionSequence = 0;
 let currentBoard = 'h723_mc02';
 const workspace = new Workspace(process.env.PNX_WORKSPACE_ROOT || null);
-const isPnxProject = root => !!root && existsSync(path.join(root, 'CMakePresets.json')) && existsSync(path.join(root, 'configs', 'boards'));
 let projectRoot = isPnxProject(workspace.root) ? workspace.root : null;
 let busy = false;
 let writeBusy = false;
@@ -43,6 +47,10 @@ const editorContexts = new Map();
 const configureResults = new Map();
 const buildJobs = Math.max(1, Math.min(8, availableParallelism()));
 mkdirSync(cacheDir, { recursive: true });
+const projectSettings = new ProjectSettings(path.join(cacheDir, 'projects'));
+function projectProfile() { return projectSettings.load(workspace.root); }
+function refreshProjectPlugin() { projectRoot = projectProfile().plugins.pnx && isPnxProject(workspace.root) ? workspace.root : null; }
+refreshProjectPlugin();
 
 function sendEvent(kind, data) {
   const payload = `event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -71,8 +79,19 @@ function workspaceBuildPresets() {
 function buildDirectory(preset) {
   const { root, presets } = workspaceBuildPresets();
   if (!root || !presets.includes(preset) || !/^[A-Za-z0-9_.-]+$/.test(preset)) throw new Error('Choose a CMake preset from the open folder first');
-  const projectId = createHash('sha256').update(path.resolve(root).toLowerCase()).digest('hex').slice(0, 12);
-  return path.join(root, 'build', 'pnx-platform', `${preset}-${projectId}`);
+  return path.join(root, 'build', preset);
+}
+function configureArguments(preset, buildDir) {
+  const args = ['--preset', preset, '-B', buildDir];
+  const file = path.join(buildDir, 'CMakeCache.txt');
+  if (existsSync(file)) {
+    const cache = readFileSync(file, 'utf8');
+    const normalize = value => { const result = path.resolve(value).replaceAll('\\', '/'); return process.platform === 'win32' ? result.toLowerCase() : result; };
+    const home = /^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$/m.exec(cache)?.[1]?.trim();
+    const directory = /^CMAKE_CACHEFILE_DIR:INTERNAL=(.+)$/m.exec(cache)?.[1]?.trim();
+    if (!home || normalize(home) !== normalize(workspace.root) || (directory && normalize(directory) !== normalize(buildDir))) args.push('--fresh');
+  }
+  return args;
 }
 function runCommand(exe, args, cwd, channel = 'general') {
   status(`Running: ${path.basename(exe)} ${args.join(' ')}`);
@@ -102,7 +121,7 @@ function readBoard(board) {
 }
 async function resources(board) {
   const data = readBoard(board);
-  const descriptors = JSON.parse(readFileSync(path.join(ROOT, 'config', 'board-resources.json'), 'utf8'));
+  const descriptors = JSON.parse(readFileSync(path.join(ROOT, 'src', 'plugins', 'pnx', 'board-resources.json'), 'utf8'));
   const descriptor = descriptors[board];
   if (!descriptor) throw new Error(`No built-in hardware description for ${board}`);
   const boardFile = path.join(projectRoot, 'boards', board, 'board.json');
@@ -313,27 +332,47 @@ function serializeSession(work) {
 async function connectSession(input) {
   await stopSession();
   const mock = input.mock === true;
-  if (!mock && !projectRoot) throw new Error('Debug and flash require an open PnX project folder');
-  const board = mock ? 'h723_mc02' : presetBoard(input.preset);
-  const elf = mock ? undefined : path.join(buildDirectory(input.preset), 'pnx_embedded.elf');
+  if (!mock && !workspace.root) throw new Error('Open a project folder first');
+  const target = mock ? { chip: 'Cortex-M Mock', board: 'h723_mc02' } : resolveTarget(workspace.root, projectProfile(), input.preset, buildDirectory);
+  const { board, elf, chip } = target;
   if (!mock && !existsSync(elf)) throw new Error(`ELF not found: ${elf}. Build the selected preset first.`);
   const probe = mock ? null : resolveProbeSelection(await listProbes(), input.probe, input.allowFlash === true || input.allowDebug === true);
   if (probe?.changed) status(`Selected probe was disconnected; using ${probe.selector}`);
-  const next = new DapSession(
-    batch => { if (session === next) onBatch(batch); },
-    message => { if (session === next) status(message); },
-    (event, data) => { if (session === next) sendEvent('debug', { event, ...data }); },
-  );
-  session = next;
-  try {
-    catalog = await next.start({ mock, chip: BOARDS[board].chip, elf, probe: probe?.selector, speedKHz: Number(input.speedKHz) || 4000,
-      rate: Number(input.rate) || 1000, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true });
-  } catch (err) { await stopSession(); throw err; }
+  const requestedSpeed = Number(input.speedKHz) || 4000;
+  const speeds = mock ? [requestedSpeed] : [...new Set([requestedSpeed, 1000, 400].filter(speed => speed <= requestedSpeed))];
+  let next;
+  for (let attempt = 0; attempt < speeds.length; attempt++) {
+    const candidate = new DapSession(
+      batch => { if (session === candidate) onBatch(batch); },
+      message => { if (session === candidate) status(message); },
+      (event, data) => { if (session === candidate) sendEvent('debug', { event, ...data }); },
+    );
+    session = candidate;
+    try {
+      catalog = await candidate.start({ mock, chip, elf, probe: probe?.selector, speedKHz: speeds[attempt],
+        rate: Number(input.rate) || 1000, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true });
+      next = candidate;
+      if (attempt) status(`探针已使用 ${speeds[attempt]} kHz 连接（请求 ${requestedSpeed} kHz）`);
+      break;
+    } catch (error) {
+      await stopSession();
+      const message = String(error.message || error);
+      if (/Disconnected|ConnectionAborted|no longer connected/i.test(message)) {
+        throw new Error(`探针 USB 连接已断开。请重新插拔探针、检查 USB 线及供电，再扫描并连接。原始错误：${message}`);
+      }
+      if (!/NoAcknowledge/.test(message) || attempt === speeds.length - 1) {
+        if (/NoAcknowledge/.test(message)) throw new Error(`目标芯片未响应 SWD（已尝试 ${speeds.slice(0, attempt + 1).join(' / ')} kHz）。请检查目标供电、共地、SWDIO/SWCLK 接线和芯片型号，并关闭其它调试软件。原始错误：${message}`);
+        throw error;
+      }
+      status(`目标未应答；释放探针后以 ${speeds[attempt + 1]} kHz 重试`);
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
   next.meta = { board, preset: input.preset, mock, allowFlash: input.allowFlash === true, allowDebug: input.allowDebug === true || input.allowFlash === true,
     elfPath: elf,
     elfHash: elf ? hashFile(elf) : undefined,
-    paramsHash: mock ? undefined : currentConfig(board).params.hash,
-    robotHash: mock ? undefined : currentConfig(board).robot.hash };
+    paramsHash: mock || !projectRoot || !board ? undefined : currentConfig(board).params.hash,
+    robotHash: mock || !projectRoot || !board ? undefined : currentConfig(board).robot.hash };
   let evidence = new Map();
   if (!mock) {
     try { evidence = await initializerEvidence(workspace.root, elf); }
@@ -343,7 +382,7 @@ async function connectSession(input) {
   const variables = flatten(catalog);
   const tree = globalTree(catalog);
   sendEvent('catalog', { variables, tree });
-  return { variables, tree, board, elf, probe: probe?.selector };
+  return { variables, tree, board, chip, elf, probe: probe?.selector };
 }
 async function route(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
@@ -359,17 +398,21 @@ async function route(req, res) {
     res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(readFileSync(path.join(webDir, 'style.css'))); return;
   }
+  if (url.pathname === '/pnx-diagnostics.js' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(readFileSync(path.join(webDir, 'plugins', 'pnx', 'diagnostics.js'))); return;
+  }
   if (url.pathname === '/config-editor' && req.method === 'GET') {
-    const page = readFileSync(path.join(webDir, 'config-host.html'), 'utf8').replace('__PNX_TOKEN__', token);
+    const page = readFileSync(path.join(webDir, 'plugins', 'pnx', 'config-host.html'), 'utf8').replace('__PNX_TOKEN__', token);
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(page); return;
   }
   if (['/config-editor.js','/config-host.js'].includes(url.pathname) && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(readFileSync(path.join(webDir, path.basename(url.pathname)))); return;
+    res.end(readFileSync(path.join(webDir, 'plugins', 'pnx', path.basename(url.pathname)))); return;
   }
   if (url.pathname === '/config-editor.css' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(readFileSync(path.join(webDir, 'config-editor.css'))); return;
+    res.end(readFileSync(path.join(webDir, 'plugins', 'pnx', 'config-editor.css'))); return;
   }
   if (req.headers['x-pnx-token'] !== token && url.searchParams.get('token') !== token) { json(res, 403, { error: 'Invalid local session token' }); return; }
   if (url.pathname === '/api/events' && req.method === 'GET') {
@@ -388,6 +431,8 @@ async function route(req, res) {
   }
   if (url.pathname === '/api/probes' && req.method === 'GET') { json(res, 200, { probes: await listProbes() }); return; }
   if (url.pathname === '/api/probes/stlink-driver' && req.method === 'GET') { json(res, 200, await checkStlinkDriver()); return; }
+  if (url.pathname === '/api/project-detection' && req.method === 'GET') { json(res,200,detectProjectTarget(workspace.root,true)); return; }
+  if (url.pathname === '/api/project-settings' && req.method === 'GET') { json(res, 200, { ...projectProfile(), availablePlugins: pluginCatalog(workspace.root, projectProfile().plugins), root: workspace.root, pnxDetected: isPnxProject(workspace.root), projectRoot }); return; }
   if (url.pathname === '/api/workspace/build-presets' && req.method === 'GET') { json(res, 200, { ...workspaceBuildPresets(), isPnx: !!projectRoot }); return; }
   if (url.pathname === '/api/record/status' && req.method === 'GET') { json(res, 200, recording?.status() || lastRecording || { active: false, file: null, rows: 0, bytes: 0 }); return; }
   if (url.pathname === '/api/record/csv' && req.method === 'GET') {
@@ -408,15 +453,26 @@ async function route(req, res) {
     const info = await resources(board);
     json(res, 200, { board, hardware: info.hardware, presets: info.presets, config: currentConfig(board) }); return;
   }
+  if (url.pathname === '/api/watch-config' && req.method === 'GET') { json(res,200,{config:loadWatchConfig(workspace)}); return; }
   const input = await body(req);
+  if (url.pathname === '/api/watch-config' && req.method === 'POST') { json(res,200,saveWatchConfig(workspace,input)); return; }
+  if (url.pathname === '/api/project-settings' && req.method === 'POST') {
+    const result = await serializeSession(async () => {
+      if (busy) throw new Error('Wait for the current build before changing project settings');
+      const settings = projectSettings.validate(input);
+      await stopSession(); projectSettings.save(workspace.root, settings); refreshProjectPlugin(); editorContexts.clear();
+      return { ...settings, root: workspace.root, projectRoot, pnxDetected: isPnxProject(workspace.root) };
+    });
+    json(res, 200, result); return;
+  }
   if (url.pathname === '/api/workspace/open' && req.method === 'POST') {
     const result = await serializeSession(async () => {
       if (busy) throw new Error('Wait for the current command to finish before switching folders');
       const previousRoot = workspace.root;
       const opened = workspace.open(input.folder);
-      const nextProject = opened.isPnx ? opened.root : null;
+      const nextProject = projectSettings.load(opened.root).plugins.pnx && isPnxProject(opened.root) ? opened.root : null;
       if (opened.root !== previousRoot || nextProject !== projectRoot) { await stopSession(); projectRoot = nextProject; editorContexts.clear(); }
-      return { ...opened, projectRoot };
+      return { ...opened, isPnx: !!projectRoot, projectRoot };
     });
     json(res, 200, result); return;
   }
@@ -460,21 +516,24 @@ async function route(req, res) {
   if (url.pathname === '/api/configure' && req.method === 'POST') {
     const buildDir = buildDirectory(input.preset);
     try {
-      await command('cmake', ['--preset', input.preset, '-B', buildDir], workspace.root, 'build');
+      await command('cmake', configureArguments(input.preset, buildDir), workspace.root, 'build');
       configureResults.set(`${workspace.root}|${input.preset}`, { status: 'Configure 成功', last: `${input.preset}: 成功` });
     } catch (err) { configureResults.set(`${workspace.root}|${input.preset}`, { status: 'Configure 失败', last: `${input.preset}: ${err.message}` }); throw err; }
     json(res, 200, { ok: true, buildDir }); return;
   }
   if (url.pathname === '/api/build' && req.method === 'POST') {
+    const task = projectProfile().build;
+    if (task.executable) { await command(task.executable, task.args, workspace.root, 'build'); detectProjectTarget(workspace.root, true); json(res, 200, { ok: true, elf: projectProfile().target.elf }); return; }
     const buildDir = buildDirectory(input.preset);
     try {
       await commandSequence([
-        ['cmake', ['--preset', input.preset, '-B', buildDir], workspace.root, 'build'],
+        ['cmake', configureArguments(input.preset, buildDir), workspace.root, 'build'],
         ['cmake', ['--build', buildDir, '--parallel', String(buildJobs)], workspace.root, 'build'],
       ]);
       configureResults.set(`${workspace.root}|${input.preset}`, { status: '编译成功', last: `${input.preset}: Configure + Build 成功` });
     } catch (err) { configureResults.set(`${workspace.root}|${input.preset}`, { status: '编译失败', last: `${input.preset}: ${err.message}` }); throw err; }
-    json(res, 200, { ok: true, buildDir, elf: projectRoot ? path.join(buildDir, 'pnx_embedded.elf') : undefined }); return;
+    const detected = detectProjectTarget(workspace.root, true, buildDir);
+    json(res, 200, { ok: true, buildDir, elf: projectRoot ? path.join(buildDir, 'pnx_embedded.elf') : detected.elf || undefined }); return;
   }
   if (url.pathname === '/api/connect' && req.method === 'POST') {
     json(res, 200, await serializeSession(() => connectSession(input))); return;
@@ -542,15 +601,14 @@ async function route(req, res) {
     json(res, 200, result); return;
   }
   if (url.pathname === '/api/flash' && req.method === 'POST') {
-    if (!projectRoot) throw new Error('Flash requires an open PnX project folder');
     if (!session || session.meta?.mock || !session.meta?.allowFlash) throw new Error('Connect to a real board with flash access first');
     if (input.preset !== session.meta.preset) throw new Error('Selected preset differs from active probe session; reconnect first');
-    const board = presetBoard(input.preset);
-    const cfg = currentConfig(board).params.value;
+    const board = session.meta.board;
+    const cfg = projectRoot && board ? currentConfig(board).params.value : {};
     if (cfg.test?.auto_run_on_boot && cfg.test?.motor_demo && input.ackMotorMotion !== true) throw new Error('Motor demo is enabled; acknowledge movement before flashing');
-    const elf = path.join(buildDirectory(input.preset), 'pnx_embedded.elf');
+    const elf = session.meta.elfPath;
     if (!existsSync(elf)) throw new Error('Build the selected preset first');
-    if (hashFile(elf) !== session.meta.elfHash || currentConfig(board).params.hash !== session.meta.paramsHash || currentConfig(board).robot.hash !== session.meta.robotHash)
+    if (hashFile(elf) !== session.meta.elfHash || (projectRoot && board && (currentConfig(board).params.hash !== session.meta.paramsHash || currentConfig(board).robot.hash !== session.meta.robotHash)))
       throw new Error('ELF or configuration changed after connection; reconnect to use the new artifact');
     await session.flash(elf);
     json(res, 200, { ok: true }); return;

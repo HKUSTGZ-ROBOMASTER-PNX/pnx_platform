@@ -17,7 +17,7 @@ try {
     name: sourcePackage.name, productName: 'PnX Platform', version: sourcePackage.version,
     private: true, type: 'module', main: 'electron/main.cjs',
   }, null, 2));
-  for (const name of ['src', 'web', 'electron', 'config', 'assets']) cpSync(path.join(source, name), path.join(stage, name), { recursive: true });
+  for (const name of ['src', 'web', 'electron', 'assets']) cpSync(path.join(source, name), path.join(stage, name), { recursive: true });
   cpSync(path.join(source, 'README.md'), path.join(stage, 'README.md'));
   mkdirSync(path.join(stage, 'bin'));
   cpSync(binary, path.join(stage, 'bin', backend));

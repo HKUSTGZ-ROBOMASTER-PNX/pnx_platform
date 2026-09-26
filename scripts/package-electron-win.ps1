@@ -19,7 +19,7 @@ Expand-Archive -LiteralPath $zip.FullName -DestinationPath $outDir
 $appDir = Join-Path $outDir 'resources\app'
 New-Item -ItemType Directory -Path $appDir -Force | Out-Null
 foreach ($name in @('package.json', 'README.md')) { Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $appDir }
-foreach ($name in @('src', 'web', 'electron', 'config', 'assets')) { Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $appDir -Recurse }
+foreach ($name in @('src', 'web', 'electron', 'assets')) { Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $appDir -Recurse }
 $binDir = Join-Path $appDir 'bin'
 New-Item -ItemType Directory -Path $binDir -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'bin\pnx-dap.exe') -Destination (Join-Path $binDir 'pnx-dap.exe')

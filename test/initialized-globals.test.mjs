@@ -49,3 +49,47 @@ test('initializer proof requires unique declarations, older source and unchanged
     assert.equal((await initializerEvidence(root,elf)).get('gain'),null);
   } finally { await rm(root,{recursive:true,force:true}); }
 });
+
+
+test('explicit aggregate initializers accept nested braces and designated members, not implicit objects or multiple declarations', () => {
+  const rows = initializedDeclarations(`
+struct Gains { float kp; float ki; };
+Gains gains{1.0f, 0.2f};
+Gains zero{};
+static Gains saved{1,2};
+volatile Gains live{1,2};
+struct Gains c_style = {1, 2};
+namespace control { tuning::Config config = {.pid = {1, 2}, .enabled = true}; }
+Gains implicit;
+Gains first{}, second{};
+const Gains fixed{1,2};
+Gains *pointer = nullptr;
+void task() { Gains local{1,2}; }
+`);
+  assert.deepEqual(rows.filter(row=>row.initialized).map(row=>row.name), ['gains','zero','saved','live','c_style','control::config']);
+});
+
+test('aggregate evidence reaches only direct mutable DWARF members and is verified again before writing', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'pnx-aggregate-'));
+  try {
+    const file=path.join(root,'main.cpp'), elf=path.join(root,'firmware.elf');
+    await writeFile(file,'Config tuning = {.pid = {1, 2}, .offsets = {0, 0}};\nConfig implicit;');
+    await writeFile(elf,'fixture'); await utimes(file,new Date(1000),new Date(1000));
+    const leaf = expression => ({id:expression,expression,typeName:'float',writable:true,address:0x20000020,scalarKind:'float32',byteWidth:4});
+    const kp=leaf('tuning.pid.kp'), offset=leaf('tuning.offsets[1]'), constant={...leaf('tuning.fixed'),typeName:'const float'};
+    const pointee=leaf('tuning.pointer[0]'), unrelated=leaf('tuningOther.kp');
+    const implicit=leaf('implicit.kp');
+    const catalog=[{expression:'tuning',typeName:'Config',children:[
+      {expression:'tuning.pid',typeName:'Pid',children:[kp]},
+      {expression:'tuning.offsets',typeName:'float[2]',children:[offset]},constant,
+      {expression:'tuning.pointer',typeName:'float *',children:[pointee]},unrelated,
+    ]},{expression:'implicit',typeName:'Config',children:[implicit]}];
+    markInitializedGlobals(catalog,await initializerEvidence(root,elf));
+    assert.equal(checkedWriteValue(kp,'2.5'),'2.5');
+    assert.equal(checkedWriteValue(offset,'0'),'0');
+    for(const denied of [constant,pointee,unrelated,implicit]) assert.throws(()=>checkedWriteValue(denied,'1'));
+    await verifyInitializer(kp);
+    await writeFile(file,'Config tuning;');
+    await assert.rejects(verifyInitializer(kp),/已改变/);
+  } finally { await rm(root,{recursive:true,force:true}); }
+});
