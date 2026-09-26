@@ -253,3 +253,41 @@ body[data-view="editor"] #codeArea,body[data-view="scope"] #scopeArea,body[data-
 .plot-card:fullscreen{width:100vw;height:100vh;max-width:none;max-height:none;border:0;border-radius:0;background:var(--pnx-bg)}
 .plot-card:fullscreen .plot-header{min-height:42px}
 .plot-card:fullscreen .plot-viewbar{min-height:39px}
+
+/* Compact workbench and Explorer. */
+body[data-view="editor"] #desktopShell{grid-template-columns:48px var(--explorer-width,250px) minmax(0,1fr)}
+#explorer{position:relative;background:#181818;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;border-right:1px solid #2b2b2b;border-radius:0}
+#explorer .sidebar-heading{height:35px;flex:none;padding:0 12px 0 20px}
+#explorer .sidebar-heading h2{font-size:11px;font-weight:400;letter-spacing:.5px;color:#bbb}
+.explorer-actions{display:flex;gap:2px}
+.explorer-actions button{display:grid;place-items:center;padding:0;width:24px;height:24px;border:0;border-radius:4px;background:transparent;color:#bbb;font-size:18px}
+#folderRoot{height:25px;min-height:25px;padding:4px 12px;color:#ccc;font-size:11px;font-weight:600;border:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+#folderRoot::before{content:'⌄';margin-right:6px;color:#bbb}
+#fileTree{padding:0 0 16px;font-size:13px;scrollbar-width:thin}
+#fileTree .tree-row{height:23px;display:flex;align-items:center;gap:5px;padding:0 8px 0 10px;border:0;border-radius:0;font:13px/23px "Segoe UI","Microsoft YaHei UI",sans-serif;color:#ccc;transform:none;transition:none}
+#fileTree .tree-row:hover{background:#2a2d2e}
+#fileTree .tree-row.active{background:#37373d;color:#fff}
+#fileTree .tree-row:focus-visible{outline:1px solid #707070;outline-offset:-1px}
+#fileTree .tree-children{padding-left:12px;margin-left:11px;border-left:1px solid transparent}
+#fileTree:hover .tree-children{border-left-color:#333}
+.tree-chevron{display:inline-block;flex:none;width:10px;text-align:center;font-size:18px;color:#b5b5b5;line-height:18px}
+.tree-row[aria-expanded="true"]>.tree-chevron{transform:rotate(90deg)}
+.tree-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.explorer-file-icon{width:16px;height:16px;flex:none;color:#8c98a4}
+.explorer-file-icon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.2;stroke-linejoin:round}
+.explorer-file-icon[data-kind="folder"]{color:#b7a278}
+.explorer-file-icon[data-kind="cpp"]{color:#65a9e5}
+.explorer-file-icon[data-kind="header"]{color:#b08cce}
+.explorer-file-icon[data-kind="json"]{color:#d4b866}
+.explorer-file-icon[data-kind="cmake"]{color:#82b899}
+.explorer-file-icon[data-kind="markdown"]{color:#76afcc}
+#explorerResize{position:absolute;right:-3px;top:0;bottom:0;width:6px;z-index:8;cursor:col-resize;touch-action:none}
+#explorerResize:hover,#explorerResize:focus-visible{background:#70707066;outline:none}
+body[data-view="editor"] .editor-toolbar{min-height:36px;padding:3px 9px;background:#181818}
+body[data-view="editor"] #fileTabs{height:35px;padding:0;background:#181818;gap:0}
+body[data-view="editor"] .file-tab{height:35px;margin:0;padding:0 12px;border:0;border-right:1px solid #252525;border-radius:0;background:#181818;font-size:13px}
+body[data-view="editor"] .file-tab.active{background:#141519;box-shadow:inset 0 1px #8b8b8b}
+body[data-view="editor"] #activityBar{background:#181818;padding-top:0;gap:0}
+body[data-view="editor"] .activity-button{height:48px;width:48px;border-radius:0;background:transparent}
+body[data-view="editor"] .activity-button.active{border-left-color:#ccc;color:#eee}
+body[data-view="editor"] #editorFooter{height:25px;font-size:11px;background:#181818}

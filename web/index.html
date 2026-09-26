@@ -25,9 +25,10 @@
   </nav>
 
   <aside id="explorer" class="sidebar view-editor">
-    <div class="sidebar-heading"><h2>资源管理器</h2><span>EXPLORER</span></div>
+    <div class="sidebar-heading"><h2>资源管理器</h2><div class="explorer-actions"><button id="refreshExplorer" title="刷新资源管理器" aria-label="刷新资源管理器">↻</button><button id="collapseExplorer" title="折叠所有文件夹" aria-label="折叠所有文件夹">⊟</button></div></div>
     <div id="folderRoot" class="folder-root">尚未打开文件夹</div>
-    <div id="fileTree" class="file-tree"></div>
+    <div id="fileTree" class="file-tree" role="tree" aria-label="工作区文件"></div>
+    <div id="explorerResize" role="separator" aria-orientation="vertical" aria-label="调整文件栏宽度" tabindex="0"></div>
   </aside>
   <section id="codeArea" class="view-editor">
     <div class="editor-toolbar"><div class="editor-actions" role="toolbar" aria-label="构建与调试">

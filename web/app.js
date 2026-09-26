@@ -428,6 +428,7 @@ function renderTabs() {
 function activateFile(path) {
   const file = state.files.get(path); if (!file) return;
   state.file = file; $('codeEditor').value = file.value; $('codeEditor').scrollTop = file.scrollTop || 0; $('codeEditor').scrollLeft = file.scrollLeft || 0;
+  for (const row of document.querySelectorAll('#fileTree .tree-row')) { const active = row.dataset.path === path; row.classList.toggle('active', active); row.setAttribute('aria-selected', String(active)); }
   updateEditor(); highlightCode(); syncHighlightScroll(); renderBreakpointGutter(); setView('editor');
 }
 function closeFile(path) {
@@ -459,7 +460,7 @@ async function openFolder() {
   const folder = window.PNXDesktop?.chooseFolder ? await window.PNXDesktop.chooseFolder() : await chooseBrowserFolder();
     if (!folder) return;
     const result = await api('/api/workspace/open', { folder });
-    if (result.root !== state.workspace) resetConnectionUI();
+    if (result.root !== state.workspace) { resetConnectionUI(); expandedDirectories.clear(); }
     state.workspace = result.root; state.projectRoot = result.projectRoot; state.file = null; state.files.clear(); loadBreakpoints(); definitionHistory.length = 0; $('goBack').disabled = true; updateEditor();
   $('workspaceLabel').textContent = result.root;
   $('folderRoot').textContent = result.root;
@@ -468,23 +469,53 @@ async function openFolder() {
   if (result.isPnx) { await loadBoard(); log(`PnX 项目已切换至 ${result.root}`); }
   else { state.config = {}; state.hardware = {}; $('hardware').replaceChildren(); $('editor').classList.add('hidden'); fillMotor(); await loadBuildPresets(); log(`已打开文件夹 ${result.root}；构建使用此文件夹的 CMake 预设`); }
 }
+const expandedDirectories = new Set();
+function fileIcon(name, directory) {
+  const icon = document.createElement('span'); icon.className = 'explorer-file-icon'; icon.setAttribute('aria-hidden', 'true');
+  const extension = name.split('.').at(-1).toLowerCase();
+  const kind = directory ? 'folder' : ['c','cpp','cc','cxx'].includes(extension) ? 'cpp' : ['h','hpp','hxx'].includes(extension) ? 'header' : extension === 'json' ? 'json' : /cmake|CMakeLists/.test(name) ? 'cmake' : extension === 'md' ? 'markdown' : 'file';
+  icon.dataset.kind = kind;
+  icon.innerHTML = directory ? '<svg viewBox="0 0 16 16"><path d="M1.5 4h5l1.5 1.5h6.5v8h-13zM1.5 4V2.5h5L8 4"/></svg>' : '<svg viewBox="0 0 16 16"><path d="M3 1.5h6l4 4v9H3zM9 1.5v4h4"/></svg>';
+  return icon;
+}
 async function renderDirectory(relative, container) {
+  if (!relative) { $('folderRoot').textContent = (state.workspace || '').split(/[\\/]/).filter(Boolean).at(-1) || '尚未打开文件夹'; $('folderRoot').title = state.workspace || ''; }
   const result = await api(`/api/workspace/list?path=${encodeURIComponent(relative)}`);
   container.replaceChildren(...result.entries.map(entry => {
     const shell = document.createElement('div');
     const row = document.createElement('button'); row.className = `tree-row${entry.directory ? ' folder' : ''}`;
-    row.textContent = `${entry.directory ? '▸' : '·'} ${entry.name}`;
+    row.dataset.path = entry.path; row.title = entry.path; row.setAttribute('role','treeitem'); row.setAttribute('aria-selected',String(state.file?.path === entry.path)); row.classList.toggle('active',state.file?.path === entry.path);
+    const chevron = document.createElement('span'); chevron.className = 'tree-chevron'; chevron.textContent = entry.directory ? '›' : '';
+    const label = document.createElement('span'); label.className = 'tree-label'; label.textContent = entry.name;
+    row.append(chevron, fileIcon(entry.name,entry.directory), label);
     shell.append(row);
     if (entry.directory) {
       const children = document.createElement('div'); children.className = 'tree-children hidden'; shell.append(children);
+      row.setAttribute('aria-expanded','false'); children.setAttribute('role','group');
+      const expand = async () => { await renderDirectory(entry.path, children); children.classList.remove('hidden'); row.setAttribute('aria-expanded','true'); expandedDirectories.add(entry.path); };
       row.onclick = () => perform(async () => {
-        if (children.classList.contains('hidden')) { await renderDirectory(entry.path, children); children.classList.remove('hidden'); row.textContent = `▾ ${entry.name}`; }
-        else { children.classList.add('hidden'); row.textContent = `▸ ${entry.name}`; }
+        if (children.classList.contains('hidden')) await expand();
+        else { children.classList.add('hidden'); row.setAttribute('aria-expanded','false'); expandedDirectories.delete(entry.path); }
       });
+      if (expandedDirectories.has(entry.path)) perform(expand);
     } else row.onclick = () => perform(() => openFile(entry.path, row));
     return shell;
   }));
 }
+$('refreshExplorer').onclick = () => perform(() => state.workspace ? renderDirectory('', $('fileTree')) : Promise.resolve());
+$('collapseExplorer').onclick = () => { expandedDirectories.clear(); for (const node of $('fileTree').querySelectorAll('.tree-children')) node.classList.add('hidden'); for (const row of $('fileTree').querySelectorAll('[aria-expanded]')) row.setAttribute('aria-expanded','false'); };
+$('fileTree').addEventListener('keydown', event => {
+  const row=event.target.closest('.tree-row'); if(!row) return;
+  const rows=[...$('fileTree').querySelectorAll('.tree-row')].filter(item=>item.getClientRects().length), index=rows.indexOf(row);
+  if (event.key==='ArrowDown' || event.key==='ArrowUp') { event.preventDefault(); rows[Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)))]?.focus(); }
+  if (event.key==='ArrowRight' && row.getAttribute('aria-expanded')==='false' || event.key==='ArrowLeft' && row.getAttribute('aria-expanded')==='true') {event.preventDefault();row.click();}
+});
+function resizeExplorer(width) { const value=Math.max(180,Math.min(560,window.innerWidth*.45,width)); $('desktopShell').style.setProperty('--explorer-width',value+'px'); try {localStorage.setItem('pnx-explorer-width',String(value));}catch{} }
+try {const width=Number(localStorage.getItem('pnx-explorer-width')); if(width) resizeExplorer(width);}catch{}
+$('explorerResize').onpointerdown = event => { event.preventDefault(); $('explorerResize').setPointerCapture(event.pointerId); };
+$('explorerResize').onpointermove = event => { if($('explorerResize').hasPointerCapture(event.pointerId)) resizeExplorer(event.clientX-$('explorer').getBoundingClientRect().left); };
+$('explorerResize').onpointerup = event => { if($('explorerResize').hasPointerCapture(event.pointerId)) $('explorerResize').releasePointerCapture(event.pointerId); };
+$('explorerResize').onkeydown = event => {if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();resizeExplorer($('explorer').clientWidth+(event.key==='ArrowRight'?10:-10));}};
 async function openFile(relative, row) {
   if (state.files.has(relative)) { activateFile(relative); return; }
   const result = await api(`/api/workspace/file?path=${encodeURIComponent(relative)}`);
