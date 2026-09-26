@@ -1332,6 +1332,8 @@ function showDefinitionOverlay() {
 document.addEventListener('keydown', event => { if (event.key === 'Control' || event.key === 'Meta') showDefinitionOverlay(); else hideDefinitionOverlay(); });
 document.addEventListener('keyup', event => { if (!event.ctrlKey && !event.metaKey) hideDefinitionOverlay(); });
 window.addEventListener('blur', hideDefinitionOverlay);
+document.addEventListener('pointermove', event => { if (!event.ctrlKey && !event.metaKey) hideDefinitionOverlay(); });
+document.addEventListener('pointerdown', event => { if (!$('definitionOverlay').contains(event.target)) hideDefinitionOverlay(); }, true);
 $('codeEditor').addEventListener('pointermove', event => { if (event.ctrlKey || event.metaKey) showDefinitionOverlay(); });
 $('definitionOverlay').addEventListener('wheel', event => {
   event.preventDefault(); const editor = $('codeEditor'); editor.scrollTop += event.deltaY; editor.scrollLeft += event.deltaX;
