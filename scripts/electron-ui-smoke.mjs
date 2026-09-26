@@ -430,16 +430,35 @@ try {
   assert.ok(axis.constantStep <= 0.01);
   assert.ok(axis.labels.some(label => Number(label) === 0.01));
 
-  const points = await evaluate(`(() => {
-    const cards = [...document.querySelectorAll('.plot-card')];
-    const source = cards[0].querySelector('.plot-header strong').getBoundingClientRect();
-    const target = cards[2].querySelector('.plot-header strong').getBoundingClientRect();
-    return { from: { x: source.left + Math.min(40, source.width / 2), y: source.top + source.height / 2 },
-      to: { x: target.left + Math.min(40, target.width / 2), y: target.top + target.height / 2 } };
-  })()`);
-  await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: points.from.x, y: points.from.y, button: 'left', clickCount: 1 });
-  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: points.to.x, y: points.to.y, button: 'left', buttons: 1 });
-  await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: points.to.x, y: points.to.y, button: 'left', clickCount: 1 });
+  // Hosted desktops differ in size and scaling. The destination may be below
+  // the scroll viewport; stale off-screen coordinates never hit a plot card.
+  await call('Emulation.setDeviceMetricsOverride', {width:1000,height:700,deviceScaleFactor:1,mobile:false});
+  const dragPoint = async id => {
+    const point = await evaluate(`(async () => {
+      const header = document.querySelector('[data-plot-id="' + ${JSON.stringify(id)} + '"] .plot-header');
+      header.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const rect = header.getBoundingClientRect();
+      // Use the header padding: title text can shrink under crowded controls.
+      const x=rect.left+5, y=rect.top+rect.height/2;
+      return {x,y,hit:document.elementFromPoint(x,y)?.closest('.plot-card')?.dataset.plotId,
+        headerHit:!!document.elementFromPoint(x,y)?.closest('.plot-header')};
+    })()`);
+    assert.equal(point.hit,id,`Drag coordinate must hit ${id}: ${JSON.stringify(point)}`);
+    assert.equal(point.headerHit,true);
+    return {x:point.x,y:point.y};
+  };
+  try {
+    const from=await dragPoint('plot-1');
+    await call('Input.dispatchMouseEvent',{type:'mouseMoved',...from});
+    await call('Input.dispatchMouseEvent',{type:'mousePressed',...from,button:'left',buttons:1,clickCount:1});
+    await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:from.x+10,y:from.y,button:'left',buttons:1});
+    assert.equal(await evaluate("document.querySelector('[data-plot-id=plot-1]').classList.contains('dragging')"),true,'Pointer drag must start');
+    const to=await dragPoint('plot-3');
+    await call('Input.dispatchMouseEvent',{type:'mouseMoved',...to,button:'left',buttons:1});
+    assert.equal(await evaluate("document.querySelector('[data-plot-id=plot-3]').classList.contains('drag-over')"),true,'Destination must receive drag hover');
+    await call('Input.dispatchMouseEvent',{type:'mouseReleased',...to,button:'left',buttons:0,clickCount:1});
+  } finally { await call('Emulation.clearDeviceMetricsOverride'); }
   const order = await evaluate('[...document.querySelectorAll(".plot-card")].map(card => card.dataset.plotId)');
   assert.deepEqual(order, ['plot-2', 'plot-3', 'plot-1']);
 
