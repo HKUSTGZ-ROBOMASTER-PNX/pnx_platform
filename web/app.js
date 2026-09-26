@@ -301,6 +301,9 @@ const escapeHtml = text => text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<'
 const cppToken = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|^\s*#[^\n]*|\b(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?)\b|\b[A-Za-z_]\w*\b/gm;
 const cppKeywords = new Set('alignas alignof asm auto break case catch class const consteval constexpr constinit continue default delete do else enum explicit export extern false for friend goto if inline mutable namespace new noexcept nullptr operator override private protected public register reinterpret_cast requires return sizeof static static_assert struct switch template this throw true try typedef typename union using virtual volatile while'.split(' '));
 const cppTypes = new Set('bool char char8_t char16_t char32_t double float int long short signed unsigned void wchar_t size_t uint8_t uint16_t uint32_t uint64_t int8_t int16_t int32_t int64_t'.split(' '));
+const pythonToken = /#[^\n]*|(?:[rRuUbBfF]{0,2})(?:"""[\s\S]*?(?:"""|(?![\s\S]))|'''[\s\S]*?(?:'''|(?![\s\S]))|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|\b(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b|\b[A-Za-z_]\w*\b/gm;
+const pythonKeywords = new Set('False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield match case'.split(' '));
+const pythonTypes = new Set('bool bytes dict float int list object set str tuple range print len self super'.split(' '));
 let highlightTimer;
 let stopRevision = 0;
 function highlightCode() {
@@ -309,17 +312,20 @@ function highlightCode() {
   const plain = source.length > 250_000;
   $('codeEditor').classList.toggle('plain', plain);
   if (plain) { $('codeHighlight').textContent = ''; return; }
-  if (!file || !/\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$/i.test(file.path)) { $('codeHighlight').innerHTML = escapeHtml(source) + '\n'; return; }
+  const python = /\.(py|pyw|pyi)$/i.test(file?.path || '');
+  if (!file || (!python && !/\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$/i.test(file.path))) { $('codeHighlight').innerHTML = escapeHtml(source) + '\n'; return; }
   let out = '', at = 0;
-  for (const match of source.matchAll(cppToken)) {
+  for (const match of source.matchAll(python ? pythonToken : cppToken)) {
     out += escapeHtml(source.slice(at, match.index));
     const word = match[0]; let kind = '';
-    if (word.startsWith('//') || word.startsWith('/*')) kind = 'comment';
+    if (python && word.startsWith('#')) kind = 'comment';
+    else if (python && /^[rRuUbBfF]{0,2}[\"']/.test(word)) kind = 'string';
+    else if (word.startsWith('//') || word.startsWith('/*')) kind = 'comment';
     else if (word.startsWith('"') || word.startsWith("'")) kind = 'string';
     else if (word.trimStart().startsWith('#')) kind = 'preproc';
     else if (/^(?:\d|0x)/.test(word)) kind = 'number';
-    else if (cppKeywords.has(word)) kind = 'keyword';
-    else if (cppTypes.has(word)) kind = 'type';
+    else if ((python ? pythonKeywords : cppKeywords).has(word)) kind = 'keyword';
+    else if ((python ? pythonTypes : cppTypes).has(word)) kind = 'type';
     out += kind ? `<span class="tok-${kind}">${escapeHtml(word)}</span>` : escapeHtml(word);
     at = match.index + word.length;
   }
@@ -441,7 +447,15 @@ function closeFile(path) {
 function syncHighlightScroll() { $('codeHighlight').scrollTop = $('codeEditor').scrollTop; $('codeHighlight').scrollLeft = $('codeEditor').scrollLeft; }
 function updateEditor() {
   const file = state.file;
-  $('editorSurface').classList.toggle('hidden', !file);
+  const markdown = /\.(md|markdown|mdown)$/i.test(file?.path || '');
+  const preview = markdown && !!file.previewMarkdown;
+  $('markdownToggle').classList.toggle('hidden', !markdown);
+  $('markdownToggle').textContent = preview ? '显示源码' : '预览 Markdown';
+  $('markdownToggle').setAttribute('aria-pressed', String(preview));
+  $('markdownPreview').classList.toggle('hidden', !preview);
+  if (preview) $('markdownPreview').innerHTML = window.renderMarkdown(file.value);
+  else $('markdownPreview').replaceChildren();
+  $('editorSurface').classList.toggle('hidden', !file || preview);
   $('emptyEditor').classList.toggle('hidden', !!file);
   renderTabs();
   $('editorPath').textContent = file?.path || '未打开文件';
@@ -1387,6 +1401,7 @@ $('checkStlinkDriver').onclick = () => perform(checkStlinkDriver);
 $('probeList').onchange = () => { $('probe').value = $('probeList').value; };
 $('probe').oninput = () => { $('probeList').selectedIndex = -1; };
 $('openFolder').onclick = () => perform(openFolder);
+$('markdownToggle').onclick = () => { if (state.file) { state.file.previewMarkdown = !state.file.previewMarkdown; updateEditor(); } };
 $('codeEditor').oninput = () => { if (state.file) state.file.value = $('codeEditor').value; updateEditor(); scheduleHighlight(); };
 $('codeEditor').onscroll = () => { if (state.file) { state.file.scrollTop = $('codeEditor').scrollTop; state.file.scrollLeft = $('codeEditor').scrollLeft; } syncHighlightScroll(); renderBreakpointGutter(); };
 function hideDefinitionOverlay() { $('definitionOverlay').classList.remove('active'); }

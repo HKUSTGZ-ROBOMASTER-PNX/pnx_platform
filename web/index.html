@@ -42,7 +42,7 @@
       <button id="quickStop" class="editor-icon-button" title="停止调试（断开探针）" aria-label="停止调试" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/></svg></button>
       <span class="toolbar-separator"></span>
       <button id="quickFlash" class="editor-icon-button" title="确认后保存、编译、连接并烧录" aria-label="编译并烧录" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-8 11h6l-1 9 9-12h-6l1-8Z"/></svg></button>
-    </div><div class="editor-toolbar-right"><button id="goDefinition" title="跳转到光标处符号的定义 F12">转到定义</button><button id="goBack" title="返回上一个位置 Alt+←" disabled>返回</button><button id="goLine" title="跳转到行 Ctrl+G">行号</button><span id="debugState">未连接调试器</span><button id="terminalToggle" title="显示或隐藏底部输出 Ctrl+`">输出</button></div></div>
+    </div><div class="editor-toolbar-right"><button id="markdownToggle" class="hidden" title="切换 Markdown 源码与预览">预览 Markdown</button><button id="goDefinition" title="跳转到光标处符号的定义 F12">转到定义</button><button id="goBack" title="返回上一个位置 Alt+←" disabled>返回</button><button id="goLine" title="跳转到行 Ctrl+G">行号</button><span id="debugState">未连接调试器</span><button id="terminalToggle" title="显示或隐藏底部输出 Ctrl+`">输出</button></div></div>
     <section id="debugPanel" class="debug-panel hidden" aria-label="调试状态与架构诊断">
       <div class="debug-stop-row"><span id="debugStopIcon" class="debug-stop-icon" aria-hidden="true">●</span><strong id="debugStopTitle">目标正在运行</strong><span id="debugLocation">连接后可读取诊断状态</span><button id="jumpToStop" disabled>定位当前行</button></div>
       <div class="debug-diagnostic-row"><label for="diagnosticTarget">快速检查</label><select id="diagnosticTarget"><option value="can0">CAN1</option><option value="can1">CAN2</option><option value="can2">CAN3</option><option value="status">全局状态 / 类型</option></select><input id="diagnosticFilter" class="hidden" type="search" placeholder="筛选状态名" aria-label="筛选全局状态字段"><button id="diagnosticSnapshot">读取快照</button><span id="diagnosticSummary">读取板上全局字段，不修改目标；局部返回值仍需停在对应代码处查看。</span></div>
@@ -51,7 +51,7 @@
     <div id="fileTabs" role="tablist" aria-label="已打开的文件"></div>
     <div id="emptyEditor"><div><strong>开始编辑</strong><span>从左侧选择文件，或点击右上角打开文件夹。</span></div></div>
     <div id="editorSurface" class="hidden"><div id="executionLine" aria-hidden="true"></div><pre id="codeHighlight" aria-hidden="true"></pre><textarea id="codeEditor" spellcheck="false" aria-label="代码编辑器"></textarea><pre id="definitionOverlay" aria-hidden="true"></pre><div id="breakpointGutter" aria-label="点击行号设置断点"></div></div>
-    <div id="editorFooter"><span id="editorPath">未打开文件</span><span id="editorDirty"></span><button id="saveFile" disabled>保存 <kbd>Ctrl+S</kbd></button></div>
+    <article id="markdownPreview" class="hidden" aria-label="Markdown 预览"></article><div id="editorFooter"><span id="editorPath">未打开文件</span><span id="editorDirty"></span><button id="saveFile" disabled>保存 <kbd>Ctrl+S</kbd></button></div>
   </section>
 
   <section id="configArea" class="view-config"><div class="config-toolbar"><span>图形配置</span><button id="openDeviceTools" title="打开探针和串口诊断等设备工具">设备工具</button></div><iframe id="configFrame" title="PnX 图形配置" loading="lazy"></iframe></section>
@@ -118,5 +118,5 @@
   </section>
 </div>
 <footer id="statusBar"><span id="workspaceLabel">打开文件夹以开始编辑</span><span class="status-right">PnX Platform · 本地工作台</span></footer>
-<script>window.PNX_TOKEN = '__PNX_TOKEN__';</script><script src="/app.js"></script>
+<script>window.PNX_TOKEN = '__PNX_TOKEN__';</script><script src="/markdown.js"></script><script src="/app.js"></script>
 </body></html>
