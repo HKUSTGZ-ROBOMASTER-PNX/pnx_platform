@@ -13,6 +13,7 @@ import { CsvRecorder } from './csv-recorder.mjs';
 import { scanToolchain, validateToolchain, verifyToolchain, toolchainPathDirectories, useToolchain, loadToolchain, saveToolchain, addToWindowsUserPath } from './toolchain.mjs';
 import { findDefinitions } from './symbols.mjs';
 import { checkStlinkDriver } from './stlink-driver.mjs';
+import { initializerEvidence, markInitializedGlobals, verifyInitializer } from './initialized-globals.mjs';
 import { ROOT, BACKEND, BOARDS, boardPaths, presetBoard } from './paths.mjs';
 import { bindingKinds, bindingValue, boardDefaults, fields, get, motorFields, motorModes, parameterActive, setPath, testRequirements, validate } from './config-editor.mjs';
 
@@ -333,6 +334,12 @@ async function connectSession(input) {
     elfHash: elf ? hashFile(elf) : undefined,
     paramsHash: mock ? undefined : currentConfig(board).params.hash,
     robotHash: mock ? undefined : currentConfig(board).robot.hash };
+  let evidence = new Map();
+  if (!mock) {
+    try { evidence = await initializerEvidence(workspace.root, elf); }
+    catch (error) { status(`无法验证全局变量初始化，变量保持只读：${error.message}`); }
+  }
+  markInitializedGlobals(catalog, evidence);
   const variables = flatten(catalog);
   const tree = globalTree(catalog);
   sendEvent('catalog', { variables, tree });
@@ -498,6 +505,9 @@ async function route(req, res) {
       throw new Error('ELF changed after connection; reconnect before writing');
     writeBusy = true;
     try {
+      const writer = session;
+      await verifyInitializer(variable);
+      if (session !== writer || writer.closed) throw new Error('Target connection changed before writing');
       const result = await session.writeValue(input.id, value);
       if (result.verified !== true) throw new Error('Target readback did not verify the written value');
       json(res, 200, { id: input.id, value: result.value, verified: true });

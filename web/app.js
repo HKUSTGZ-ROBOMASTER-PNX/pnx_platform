@@ -616,7 +616,8 @@ function displayVariables() {
   });
   state.matchingVariableIds = matchingIds;
   $('selectedCount').textContent = `已选 ${state.selected.length}`;
-  $('bankCount').textContent = `采集分 ${Math.max(1, Math.ceil(state.selected.length / state.bankSize))} 组`;
+  $('bankCount').textContent = `曲线 ${plotVariableIds().length} 路 · 分 ${Math.max(1, Math.ceil(plotVariableIds().length / state.bankSize))} 组`;
+  $('refreshWatchValues').disabled = !state.connected || !state.selected.length;
   $('selectMatches').disabled = !state.connected || !query || !matchingIds.length;
   $('selectMatches').textContent = `添加筛选结果（${matchingIds.length} 匹配）`;
   const list = $('variables'), scrollTop = list.scrollTop;
@@ -632,7 +633,7 @@ function displayVariables() {
       box.onchange = () => changeVariableSelection([node.id], box.checked);
       const swatch = document.createElement('i'); swatch.className = 'variable-swatch'; swatch.style.background = box.checked ? colors[state.selected.indexOf(node.id) % colors.length] : '#596575';
       const name = document.createElement('span'); name.className = 'variable-name'; name.textContent = node.name || variable.name; name.title = node.expression || variable.name; label.append(box, swatch, name);
-      if (box.checked) { const destination = document.createElement('select'); destination.setAttribute('aria-label', `${variable.name} 所在曲线`); destination.replaceChildren(...state.plots.map(plot => option(plot.id, plot.name))); destination.value = state.plotAssignments.get(node.id) || state.plots[0].id; destination.onclick = event => event.stopPropagation(); destination.onchange = () => { state.plotAssignments.set(node.id, destination.value); renderPlots(); savePlotLayout(); }; label.append(destination); }
+      if (box.checked) { const destination = document.createElement('select'); destination.setAttribute('aria-label', `${variable.name} 所在曲线`); destination.replaceChildren(option('watch-only', '仅查看 / 修改'), ...state.plots.map(plot => option(plot.id, plot.name))); destination.value = state.plotAssignments.get(node.id) || state.plots[0].id; destination.onclick = event => event.stopPropagation(); destination.onchange = () => { state.plotAssignments.set(node.id, destination.value); renderPlots(); savePlotLayout(); }; label.append(destination); }
       if (variable.writable && state.debugAccess) { const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'variable-write'; edit.textContent = '✎'; edit.title = `修改 ${variable.name} (${variable.type})`; edit.setAttribute('aria-label', edit.title); edit.onclick = event => { event.preventDefault(); event.stopPropagation(); openVariableWrite(variable); }; label.append(edit); }
       return label;
     }
@@ -671,13 +672,18 @@ function displaySelectedVariables() {
     top.append(swatch, name, value);
     const actions = document.createElement('div'); actions.className = 'selected-variable-actions';
     const destination = document.createElement('select'); destination.setAttribute('aria-label', `${variable.name} 所在曲线`);
-    destination.replaceChildren(...state.plots.map(plot => option(plot.id, plot.name)));
+    destination.replaceChildren(option('watch-only', '仅查看 / 修改'), ...state.plots.map(plot => option(plot.id, plot.name)));
     destination.value = state.plotAssignments.get(id) || state.plots[0].id;
-    destination.onchange = () => { state.plotAssignments.set(id, destination.value); renderPlots(); savePlotLayout(); };
+    destination.onchange = () => { state.plotAssignments.set(id, destination.value); renderPlots(); displayVariables(); savePlotLayout(); };
     actions.append(destination);
+    const read = document.createElement('button'); read.textContent = '读取'; read.title = '读取当前值，不订阅曲线';
+    read.onclick = () => perform(() => readWatchValues([id])); actions.append(read);
     if (variable.writable && state.debugAccess) {
       const edit = document.createElement('button'); edit.className = 'variable-write'; edit.textContent = '✎'; edit.title = `修改 ${variable.name}`;
       edit.onclick = () => openVariableWrite(variable); actions.append(edit);
+    } else {
+      const reason = document.createElement('span'); reason.className = 'hint'; reason.textContent = '只读';
+      reason.title = !state.debugAccess ? '需要可写连接' : variable.writeReason || '未确认显式初始化的全局标量'; actions.append(reason);
     }
     const remove = document.createElement('button'); remove.className = 'variable-remove'; remove.textContent = '×'; remove.title = `移除 ${variable.name}`;
     remove.onclick = () => changeVariableSelection([id], false);
@@ -687,11 +693,26 @@ function displaySelectedVariables() {
   updateLive();
 }
 let variableToWrite;
+function plotVariableIds() { return state.selected.filter(id => state.plotAssignments.get(id) !== 'watch-only'); }
+async function readWatchValues(ids) {
+  if (!state.connected) throw new Error('请先连接目标');
+  const connectionCatalog = state.variableById;
+  $('refreshWatchValues').disabled = true;
+  try {
+    for (let start = 0; start < ids.length; start += 40) {
+      const result = await api('/api/debug/snapshot', { ids: ids.slice(start, start + 40) });
+      if (!state.connected || state.variableById !== connectionCatalog) return;
+      for (const item of result.values) state.latestById.set(item.id, item.value);
+    }
+    updateLive(); $('watchReadStatus').textContent = `${new Date().toLocaleTimeString()} 已读取 ${ids.length} 个变量（按需快照）`;
+  } finally { $('refreshWatchValues').disabled = !state.connected || !state.selected.length; }
+}
+$('refreshWatchValues').onclick = () => perform(() => readWatchValues(state.selected));
 function openVariableWrite(variable) {
   variableToWrite = variable;
   $('writeTarget').textContent = `${variable.name} · ${variable.type} · 0x${variable.address.toString(16).toUpperCase()}`;
   const current = state.latestById.get(variable.id);
-  $('writeCurrent').textContent = Number.isFinite(current) ? `最近采样值：${current}` : '最近采样值：尚未采集';
+  $('writeCurrent').textContent = current !== undefined ? `最近读取值：${current}` : '尚未读取；可先点击变量行的“读取”';
   $('writeValue').value = Number.isFinite(current) ? String(current) : '';
   $('writeError').textContent = '';
   $('writeDialog').showModal(); $('writeValue').focus(); $('writeValue').select();
@@ -703,6 +724,7 @@ $('writeSubmit').onclick = async () => {
   $('writeSubmit').disabled = true; $('writeError').textContent = '';
   try {
     const result = await api('/api/write-variable', { id: variableToWrite.id, value: $('writeValue').value });
+    state.latestById.set(variableToWrite.id, result.value); updateLive();
     log(`变量写入并读回校验：${variableToWrite.name} = ${result.value}`, 'debug');
     $('writeDialog').close();
   } catch (error) { $('writeError').textContent = error.message; }
@@ -881,7 +903,7 @@ function updateLive() {
     const id = row.dataset.variableId;
     if (!id) continue;
     const latest = state.latestById.get(id);
-    const value = Number.isFinite(latest) ? latest.toPrecision(7) : '—';
+    const value = Number.isFinite(latest) ? latest.toPrecision(7) : latest !== undefined ? String(latest) : '—';
     const target = row.querySelector('.selected-variable-value');
     if (target.textContent !== value) target.textContent = value;
     const sampleAt = state.latestAtById.get(id);
@@ -1422,7 +1444,7 @@ $('selectMatches').onclick = () => { if (!$('search').value.trim()) return; chan
 $('subscribe').onclick = () => perform(async () => {
   if (state.recording) applyRecordStatus(await api('/api/record/stop', {}));
   const rate = Number($('scopeRate').value) || 1000; $('rate').value = String(rate);
-  const result = await api('/api/subscribe', { ids: state.selected, rate });
+  const result = await api('/api/subscribe', { ids: plotVariableIds(), rate });
   clearTimeout(liveTimer); liveTimer = null;
   state.activeIds = result.ids; state.activeIndex = new Map(result.ids.map((id, index) => [id, index])); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = result.banks; state.bankSize = result.bankSize; state.bankDwellMs = result.dwellMs; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = performance.now(); state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
   $('metrics').textContent = result.ids.length ? '等待实时数据' : '尚未选择变量'; displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();

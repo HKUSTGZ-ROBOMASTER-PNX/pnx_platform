@@ -618,6 +618,32 @@ try {
   assert.equal(variableControls.dialogOpened && variableControls.closed && variableControls.selectedUnchanged, true);
   assert.deepEqual(variableControls.writeRequest, { id: 'global-0', value: '1.25' });
   await evaluate("document.getElementById('closeVariablePicker').click()");
+  const independentWatch = await evaluate(`(async () => {
+    const id=state.selected[0], previousFetch=window.fetch, requests=[];
+    displaySelectedVariables();
+    const destination=document.querySelector('#selectedVariables select');
+    destination.value='watch-only'; destination.dispatchEvent(new Event('change'));
+    window.fetch=async (url,init)=> {
+      if(['/api/debug/snapshot','/api/subscribe','/api/write-variable'].includes(url)) {
+        const request=JSON.parse(init.body); requests.push({url,request});
+        const result=url==='/api/debug/snapshot'?{values:[{id,value:7.25}]}:url==='/api/subscribe'?{ids:[],banks:1}:{id,value:8.5,verified:true};
+        return new Response(JSON.stringify(result),{status:200,headers:{'Content-Type':'application/json'}});
+      }
+      return previousFetch(url,init);
+    };
+    try {
+      await readWatchValues([id]);
+      const noSubscribe=requests.every(item=>item.url!=='/api/subscribe');
+      const readValue=document.querySelector('#selectedVariables .selected-variable-value').textContent;
+      document.querySelector('#selectedVariables .variable-write').click();
+      document.getElementById('writeValue').value='8.5'; await document.getElementById('writeSubmit').onclick();
+      await document.getElementById('subscribe').onclick();
+      return {noSubscribe,readValue,plotIds:plotVariableIds(),selected:state.selected.length,
+        subscription:requests.find(item=>item.url==='/api/subscribe').request.ids,
+        wrote:requests.some(item=>item.url==='/api/write-variable' && item.request.id===id)};
+    } finally {window.fetch=previousFetch;}
+  })()`);
+  assert.deepEqual(independentWatch,{noSubscribe:true,readValue:'7.250000',plotIds:[],selected:1,subscription:[],wrote:true});
   const sidebarDrag = await evaluate(`(() => {
     const handle = document.getElementById('scopeResize').getBoundingClientRect();
     return { x: handle.left + handle.width / 2, y: handle.top + handle.height / 2,

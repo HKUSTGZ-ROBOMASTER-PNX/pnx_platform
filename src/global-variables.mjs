@@ -17,9 +17,9 @@ function directRamScalar(item) {
 }
 
 export function writableGlobal(item) {
-  return directRamScalar(item) && item.writable === true && !item.children?.length
+  return directRamScalar(item) && item.writable === true && item.explicitInitializer === true && !item.children?.length
     && typeof item.typeName === 'string' && item.typeName.length > 0
-    && !/[\[*\]]|\b(?:unknown|recursive|void)\b/i.test(item.typeName);
+    && !/[\[*\]]|\b(?:unknown|recursive|void|const)\b/i.test(item.typeName);
 }
 
 export function globalScalars(items, result = []) {
@@ -28,7 +28,8 @@ export function globalScalars(items, result = []) {
     if (item.id && item.expression && !item.children?.length && directRamScalar(item)) {
       result.push({ id: item.id, name: item.expression, type: item.typeName, typeName: item.typeName,
         address: item.address, scalarKind: item.scalarKind, byteWidth: item.byteWidth,
-        writable: writableGlobal(item) });
+        explicitInitializer: item.explicitInitializer === true, initializerEvidence: item.initializerEvidence,
+        writeReason: item.writeReason || '只读：不满足全局标量写入条件', writable: writableGlobal(item) });
     }
     if (Array.isArray(item.children) && !/\*/.test(item.typeName || '')) globalScalars(item.children, result);
   }
@@ -46,7 +47,7 @@ export function globalTree(items) {
     } else if (!item.children?.length && item.id && item.expression && directRamScalar(item)) {
       nodes.push({ id: item.id, name: item.name || item.expression, expression: item.expression,
         type: item.typeName, address: item.address, scalarKind: item.scalarKind,
-        byteWidth: item.byteWidth, writable: writableGlobal(item), children: [] });
+        byteWidth: item.byteWidth, explicitInitializer: item.explicitInitializer === true, writeReason: item.writeReason, writable: writableGlobal(item), children: [] });
     }
   }
   return nodes;

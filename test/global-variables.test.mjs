@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { checkedWriteValue, globalScalars, globalTree, writableGlobal } from '../src/global-variables.mjs';
 
 const scalar = (id, changes = {}) => ({ id, name: id, expression: id, typeName: 'uint32_t', address: 0x20000020,
-  byteWidth: 4, scalarKind: 'unsigned', writable: true, children: [], ...changes });
+  byteWidth: 4, scalarKind: 'unsigned', writable: true, explicitInitializer: true, children: [], ...changes });
 
 test('global catalog excludes pointer-derived fields and only offers typed direct RAM scalars for writing', () => {
   const global = scalar('counter');
