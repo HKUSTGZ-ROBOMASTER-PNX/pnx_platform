@@ -49,11 +49,17 @@ jobs:
           rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
           rustup default stable-x86_64-pc-windows-gnu
           '${{ steps.msys2.outputs.msys2-location }}\mingw64\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - name: Check version and run unit tests
+      - name: Check release version
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           if ("v$version" -ne $env:RELEASE_TAG) { throw 'Tag and package version differ' }
           if (-not (Select-String -Path native/Cargo.toml -SimpleMatch "version = `"$version`"")) { throw 'Rust and application versions differ' }
+      - name: Build native backend before integration tests
+        run: |
+          ./scripts/build-native-win.ps1
+          if (-not (Test-Path -LiteralPath 'bin/pnx-dap.exe')) { throw 'Native backend was not staged in bin' }
+      - name: Run unit and integration tests
+        run: |
           node --test test/*.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
       - name: Download verified Electron runtime
