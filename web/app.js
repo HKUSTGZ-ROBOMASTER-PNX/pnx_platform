@@ -501,7 +501,9 @@ async function renderDirectory(relative, container) {
     row.dataset.path = entry.path; row.title = entry.path; row.setAttribute('role','treeitem'); row.setAttribute('aria-selected',String(state.file?.path === entry.path)); row.classList.toggle('active',state.file?.path === entry.path);
     const chevron = document.createElement('span'); chevron.className = 'tree-chevron'; chevron.textContent = entry.directory ? '›' : '';
     const label = document.createElement('span'); label.className = 'tree-label'; label.textContent = entry.name;
-    row.append(chevron, fileIcon(entry.name,entry.directory), label);
+    row.append(chevron);
+    if (!entry.directory) row.append(fileIcon(entry.name, false));
+    row.append(label);
     shell.append(row);
     if (entry.directory) {
       const children = document.createElement('div'); children.className = 'tree-children hidden'; shell.append(children);

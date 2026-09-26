@@ -261,21 +261,20 @@ body[data-view="editor"] #desktopShell{grid-template-columns:48px var(--explorer
 #explorer .sidebar-heading h2{font-size:11px;font-weight:400;letter-spacing:.5px;color:#bbb}
 .explorer-actions{display:flex;gap:2px}
 .explorer-actions button{display:grid;place-items:center;padding:0;width:24px;height:24px;border:0;border-radius:4px;background:transparent;color:#bbb;font-size:18px}
-#folderRoot{height:25px;min-height:25px;padding:4px 12px;color:#ccc;font-size:11px;font-weight:600;border:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+#folderRoot{height:25px;min-height:25px;padding:4px 12px;color:#ccc;font-size:11px;font-weight:600;border:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:none}
 #folderRoot::before{content:'⌄';margin-right:6px;color:#bbb}
 #fileTree{padding:0 0 16px;font-size:13px;scrollbar-width:thin}
 #fileTree .tree-row{height:23px;display:flex;align-items:center;gap:5px;padding:0 8px 0 10px;border:0;border-radius:0;font:13px/23px "Segoe UI","Microsoft YaHei UI",sans-serif;color:#ccc;transform:none;transition:none}
 #fileTree .tree-row:hover{background:#2a2d2e}
 #fileTree .tree-row.active{background:#37373d;color:#fff}
 #fileTree .tree-row:focus-visible{outline:1px solid #707070;outline-offset:-1px}
-#fileTree .tree-children{padding-left:12px;margin-left:11px;border-left:1px solid transparent}
+#fileTree .tree-children{padding-left:3px;margin-left:8px;border-left:1px solid transparent}
 #fileTree:hover .tree-children{border-left-color:#333}
 .tree-chevron{display:inline-block;flex:none;width:10px;text-align:center;font-size:18px;color:#b5b5b5;line-height:18px}
 .tree-row[aria-expanded="true"]>.tree-chevron{transform:rotate(90deg)}
 .tree-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .explorer-file-icon{width:16px;height:16px;flex:none;color:#8c98a4}
 .explorer-file-icon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.2;stroke-linejoin:round}
-.explorer-file-icon[data-kind="folder"]{color:#b7a278}
 .explorer-file-icon[data-kind="cpp"]{color:#65a9e5}
 .explorer-file-icon[data-kind="header"]{color:#b08cce}
 .explorer-file-icon[data-kind="json"]{color:#d4b866}
