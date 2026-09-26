@@ -41,6 +41,34 @@ async function scanProbes() {
   finally { button.disabled = false; }
 }
 const terminalNames = { general: '常规', build: '构建', debug: '调试', flash: '烧录', diagnostics: '诊断' };
+async function checkStlinkDriver() {
+  const button = $('checkStlinkDriver'), output = $('stlinkDriverStatus');
+  button.disabled = true; output.textContent = '正在读取 ST-Link 设备与驱动信息…';
+  try {
+    const result = await api('/api/probes/stlink-driver');
+    const messages = {
+      absent: '未检测到已接入的 ST-Link，无法判断驱动是否已安装。请检查 USB 数据线和接口，再重新检测。',
+      missing: '检测到 ST-Link 接口缺少驱动（代码 28）。请安装 ST 官方驱动后重新插拔设备并检测。',
+      error: '检测到 ST-Link 接口异常。请根据下方设备错误码检查设备管理器；异常不一定由驱动导致。',
+      ready: 'Windows 报告 ST-Link 设备状态正常。可点击“扫描探针”继续；此检查不代表 SWD 连接或目标板正常。',
+      unknown: result.error || '设备状态信息不完整，无法确定驱动是否正常。请在设备管理器中检查。',
+      unsupported: '当前系统不使用 Windows ST-Link 驱动检查。请通过“扫描探针”检查识别情况；Linux 还需检查 USB 访问权限。',
+    };
+    output.replaceChildren();
+    const summary = document.createElement('p'); summary.textContent = messages[result.state] || messages.unknown; output.append(summary);
+    for (const device of result.devices || []) {
+      const row = document.createElement('p');
+      row.textContent = `${device.name || 'ST-Link 接口'} · ${device.id} · 错误码 ${device.problem ?? '未知'} · 服务 ${device.service || '未知'} · 驱动 ${device.provider || '未知'} ${device.version || ''} · INF ${device.inf || '未知'}`;
+      output.append(row);
+    }
+    if (result.platform === 'win32') {
+      const link = document.createElement('a'); link.textContent = 'ST 官方驱动下载（STSW-LINK009）';
+      link.href = 'https://www.st.com/en/development-tools/stsw-link009.html'; link.target = '_blank'; link.rel = 'noopener noreferrer'; output.append(link);
+      if (window.PNXDesktop?.openToolDownload) link.onclick = event => { event.preventDefault(); perform(() => window.PNXDesktop.openToolDownload('stlink')); };
+    }
+  } catch (error) { output.textContent = `检查失败：${error.message}`; }
+  finally { button.disabled = false; }
+}
 const terminals = new Map([['general', '']]);
 let activeTerminal = 'general';
 let nextTerminal = 1;
@@ -1255,6 +1283,7 @@ $('toolchainDownload').onclick = () => perform(async () => {
   $('toolchainMissing').close();
 });
 $('scanProbes').onclick = () => perform(scanProbes);
+$('checkStlinkDriver').onclick = () => perform(checkStlinkDriver);
 $('probeList').onchange = () => { $('probe').value = $('probeList').value; };
 $('probe').oninput = () => { $('probeList').selectedIndex = -1; };
 $('openFolder').onclick = () => perform(openFolder);

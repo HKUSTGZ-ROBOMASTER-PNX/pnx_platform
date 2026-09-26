@@ -12,6 +12,7 @@ import { Workspace } from './workspace.mjs';
 import { CsvRecorder } from './csv-recorder.mjs';
 import { scanToolchain, validateToolchain, verifyToolchain, toolchainPathDirectories, useToolchain, loadToolchain, saveToolchain, addToWindowsUserPath } from './toolchain.mjs';
 import { findDefinitions } from './symbols.mjs';
+import { checkStlinkDriver } from './stlink-driver.mjs';
 import { ROOT, BACKEND, BOARDS, boardPaths, presetBoard } from './paths.mjs';
 import { bindingKinds, bindingValue, boardDefaults, fields, get, motorFields, motorModes, parameterActive, setPath, testRequirements, validate } from './config-editor.mjs';
 
@@ -379,6 +380,7 @@ async function route(req, res) {
     json(res, 200, latestToolchainScan.result); return;
   }
   if (url.pathname === '/api/probes' && req.method === 'GET') { json(res, 200, { probes: await listProbes() }); return; }
+  if (url.pathname === '/api/probes/stlink-driver' && req.method === 'GET') { json(res, 200, await checkStlinkDriver()); return; }
   if (url.pathname === '/api/workspace/build-presets' && req.method === 'GET') { json(res, 200, { ...workspaceBuildPresets(), isPnx: !!projectRoot }); return; }
   if (url.pathname === '/api/record/status' && req.method === 'GET') { json(res, 200, recording?.status() || lastRecording || { active: false, file: null, rows: 0, bytes: 0 }); return; }
   if (url.pathname === '/api/record/csv' && req.method === 'GET') {

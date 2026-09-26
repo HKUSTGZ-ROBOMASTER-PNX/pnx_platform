@@ -629,6 +629,27 @@ try {
   assert.equal(await evaluate("document.getElementById('quickStop').disabled"), false);
   await evaluate("document.getElementById('quickStop').onclick()");
   assert.equal(await evaluate("!state.connected && !state.debugAccess && document.getElementById('quickStop').disabled && !document.getElementById('executionLine').classList.contains('visible')"), true);
+  const driverChecks = await evaluate(`(async () => {
+    const originalFetch = window.fetch;
+    const results = [];
+    try {
+      for (const status of ['missing', 'ready', 'unknown', 'absent']) {
+        window.fetch = async url => url === '/api/probes/stlink-driver'
+          ? { ok: true, json: async () => ({ platform: 'win32', state: status, devices: [] }) } : originalFetch(url);
+        await document.getElementById('checkStlinkDriver').onclick();
+        results.push({ status, text: document.getElementById('stlinkDriverStatus').textContent,
+          enabled: !document.getElementById('checkStlinkDriver').disabled,
+          link: document.querySelector('#stlinkDriverStatus a').href });
+      }
+    } finally { window.fetch = originalFetch; }
+    return results;
+  })()`);
+  assert.match(driverChecks[0].text, /代码 28/);
+  assert.match(driverChecks[1].text, /状态正常/);
+  assert.match(driverChecks[2].text, /无法确定/);
+  assert.match(driverChecks[3].text, /未检测到/);
+  assert.ok(driverChecks.every(item => item.enabled && item.link === 'https://www.st.com/en/development-tools/stsw-link009.html'));
+  console.log('ST-Link driver UI checks passed');
   await evaluate('window.close()');
   closedByTest = true;
 } finally {

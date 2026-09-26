@@ -128,6 +128,7 @@ ipcMain.handle('pnx:choose-folder', async () => {
   return folder;
 });
 const toolDownloadUrls = Object.freeze({
+  stlink: 'https://www.st.com/en/development-tools/stsw-link009.html',
   cmake: 'https://cmake.org/download/',
   ninja: 'https://github.com/ninja-build/ninja/releases',
   arm: 'https://developer.arm.com/tools-and-software/gnu-toolchain#Downloads',

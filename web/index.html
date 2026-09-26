@@ -98,6 +98,8 @@
       <section class="card"><div class="card-heading"><span class="section-index">03</span><h2>探针与烧录</h2></div>
         <div class="row"><label>已发现的探针<select id="probeList"><option value="auto">自动选择</option></select></label><button id="scanProbes" type="button">扫描探针</button><label>探针 selector<input id="probe" value="auto" placeholder="auto 或设备 selector"></label><label>SWD 时钟 kHz<input id="speed" type="number" min="100" value="4000"></label><label>请求采样率 S/s<input id="rate" type="number" min="1" max="100000" value="1000"></label></div>
         <p id="probeScanStatus" class="hint">支持 ST-Link 与 DAPLink / CMSIS-DAP；选择探针后通过 SWD 连接。</p>
+        <div class="row"><button id="checkStlinkDriver" type="button">检查 ST-Link 驱动</button></div>
+        <div id="stlinkDriverStatus" class="hint" role="status" aria-live="polite">连接 ST-Link 后可检查 Windows 设备状态及驱动信息。</div>
         <div class="row"><button id="mock">模拟连接</button><button id="attach">连接目标板</button><button id="connectFlash">连接并允许烧录</button><button id="flash" class="primary" disabled>编译并烧录</button><button id="disconnect" disabled>断开探针</button></div>
         <p class="hint">断开探针不是电机急停；当前版本不提供电机运动控制或辨识。</p>
       </section>
