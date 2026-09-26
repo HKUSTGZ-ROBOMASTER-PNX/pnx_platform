@@ -164,6 +164,14 @@ export class DapSession {
     return this.request(command, { threadId: 1 }, 15000);
   }
 
+  async debugSnapshot(ids = [], includeStack = false) {
+    const [values, stack] = await Promise.all([
+      ids.length ? this.request(`${this.prefix}/readValues`, { ids }, 15000) : Promise.resolve({ values: [] }),
+      includeStack ? this.request('stackTrace', { threadId: 1, startFrame: 0, levels: 1 }, 15000) : Promise.resolve(null),
+    ]);
+    return { values: values.values || [], frame: stack?.stackFrames?.[0] || null };
+  }
+
   async setBreakpoints(source, lines) {
     if (typeof source !== 'string' || !source) throw new Error('Choose a source file');
     if (!Array.isArray(lines) || lines.length > 64 || lines.some(line => !Number.isSafeInteger(line) || line < 1))

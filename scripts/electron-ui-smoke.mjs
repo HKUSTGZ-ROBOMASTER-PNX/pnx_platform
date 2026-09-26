@@ -587,8 +587,44 @@ try {
   await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: sidebarDrag.x + 70, y: sidebarDrag.y, button: 'left', clickCount: 1 });
   const sidebarWidth = await evaluate("document.getElementById('scopeSidebar').getBoundingClientRect().width");
   assert.ok(sidebarWidth >= sidebarDrag.before + 60);
+  const debugInspector = await evaluate(`(async () => {
+    const previousFetch = window.fetch;
+    const source = ${JSON.stringify(path.join(pnxFixture, 'app', 'app.cpp'))};
+    const names = ['can_diag_sample_count','can_diag_bus[0].state_bo','can_diag_bus[0].ack_total',
+      'can_diag_bus[0].rx_frames_total','can_diag_bus[0].tx_attempts_total'];
+    const values = [10,1,5,0,10];
+    setVariableCatalog(names.map((name, index) => ({ id: 'diag-' + index, name, type: 'uint32_t' })));
+    state.connected = true; state.debugAccess = true; renderDebugPanel();
+    window.fetch = (url, options) => String(url) === '/api/debug/snapshot'
+      ? Promise.resolve(new Response(JSON.stringify(JSON.parse(options.body).includeStack
+        ? { values: [], frame: { source: { path: source }, line: 1, instructionPointerReference: '0x08001234' } }
+        : { values: JSON.parse(options.body).ids.map(id => ({ id, value: values[Number(id.slice(5))] })) }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } })) : previousFetch(url, options);
+    try {
+      await handleDebugEvent({ event: 'stopped', reason: 'breakpoint' });
+      const marker = document.querySelector('#breakpointGutter .current-execution')?.textContent === '1'
+        && document.getElementById('executionLine').classList.contains('visible');
+      const location = document.getElementById('debugLocation').textContent;
+      document.getElementById('diagnosticTarget').value = 'can0';
+      await captureDiagnosticSnapshot();
+      const diagnosis = document.getElementById('diagnosticFindings').textContent;
+      const listed = document.querySelectorAll('#diagnosticValues .diagnostic-value').length;
+      const statusHint = statusFindings([{ name: 'state.can.last_status', type: 'types::status', value: 2 }])[0];
+      return { marker, location, workspace: state.workspace, source, diagnosis, listed,
+        icon: !!document.querySelector('#quickContinue svg'), statusHint };
+    } finally { window.fetch = previousFetch; }
+  })()`);
+  const debugScreenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(path.join(root, '.cache', 'electron-ui-debug.png'), Buffer.from(debugScreenshot.data, 'base64'));
+  await evaluate("handleDebugEvent({ event: 'continued' })");
+  debugInspector.cleared = await evaluate("!document.getElementById('executionLine').classList.contains('visible')");
+  assert.equal(debugInspector.marker && debugInspector.cleared && debugInspector.icon, true, JSON.stringify(debugInspector));
+  assert.match(debugInspector.location, /app\.cpp:1 · 0x08001234/);
+  assert.match(debugInspector.diagnosis, /Bus Off/);
+  assert.equal(debugInspector.listed, 5);
+  assert.match(debugInspector.statusHint, /not_configured/);
   console.log(JSON.stringify({ profile: realProbe ? 'stlink-300' : mockBanked ? 'mock-banked-4' : 'mock-4', configPage, configNavigation, deviceTools, toolchainSetup, missingToolPrompt, probePicker, editor, genericState, navigation, savedDirtyTabs: 2, workflows, terminal, plots, axis, dragOrder: order,
-    acquisition: { ...acquisition, liveValues: acquisition.liveValues.slice(0, 8) }, selectedView, plotInteraction, wheelZoom, panned, fullScreenPlot, fullScreenGrid, csv, variableTree, deepTree, variableControls, sidebarWidth,
+    acquisition: { ...acquisition, liveValues: acquisition.liveValues.slice(0, 8) }, selectedView, plotInteraction, wheelZoom, panned, fullScreenPlot, fullScreenGrid, csv, variableTree, deepTree, variableControls, sidebarWidth, debugInspector,
     rendererTaskSecondsInTwoSeconds: Number((duration(performanceAfter) - duration(performanceBefore)).toFixed(3)), screenshotPath }, null, 2));
   await evaluate('disconnect()');
   await evaluate('window.close()');

@@ -4,7 +4,7 @@ const colors = ['#5ee1a8','#ffbd69','#6db6ff','#ff7397','#bb9aff','#f0e07b','#6d
 const BANK_CHANNELS = 256;
 const PLOT_PAGE_SIZE = 64;
 const state = { board: 'h723_mc02', preset: 'h723-debug', config: {}, hardware: {}, variables: [], selected: [], activeIds: [], activeIndex: new Map(), points: [], latest: [], series: new Map(), latestById: new Map(), latestAtById: new Map(), firstTimestampNs: null, lastTimestampNs: 0, banks: 1, bankSize: BANK_CHANNELS, bankDwellMs: 0, streamEpoch: null, sampleCount: 0, droppedFrames: 0, rateWindow: [], lastSampleAt: 0, connected: false, flashAccess: false,
-  debugAccess: false, debugPaused: false, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
+  debugAccess: false, debugPaused: false, debugReason: '', stoppedAt: null, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
   observedValues: new Map(), valueChangedAt: new Map(), valueSeenAt: new Map(), recording: false, recordFile: null, recordRows: 0, recordError: null, missingTools: [] };
 async function api(route, data) {
   const response = await fetch(route, { method: data === undefined ? 'GET' : 'POST', headers: { 'X-PnX-Token': token, 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
@@ -269,6 +269,7 @@ const cppToken = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*
 const cppKeywords = new Set('alignas alignof asm auto break case catch class const consteval constexpr constinit continue default delete do else enum explicit export extern false for friend goto if inline mutable namespace new noexcept nullptr operator override private protected public register reinterpret_cast requires return sizeof static static_assert struct switch template this throw true try typedef typename union using virtual volatile while'.split(' '));
 const cppTypes = new Set('bool char char8_t char16_t char32_t double float int long short signed unsigned void wchar_t size_t uint8_t uint16_t uint32_t uint64_t int8_t int16_t int32_t int64_t'.split(' '));
 let highlightTimer;
+let stopRevision = 0;
 function highlightCode() {
   const file = state.file;
   const source = $('codeEditor').value;
@@ -306,9 +307,18 @@ function saveBreakpoints() {
   try { localStorage.setItem(breakpointStorageKey(), JSON.stringify(Object.fromEntries([...state.breakpoints].map(([file, lines]) => [file, [...lines].sort((a, b) => a - b)])))); }
   catch { /* Storage can be disabled. */ }
 }
+function renderExecutionLine() {
+  const marker = $('executionLine'), editor = $('codeEditor');
+  const active = state.debugPaused && state.stoppedAt?.path === state.file?.path;
+  marker.classList.toggle('visible', !!active);
+  if (!active) return;
+  const rowHeight = parseFloat(getComputedStyle(editor).lineHeight) || 21;
+  marker.style.top = `${22 + (state.stoppedAt.line - 1) * rowHeight - editor.scrollTop}px`;
+  marker.style.height = `${rowHeight}px`;
+}
 function renderBreakpointGutter() {
   const gutter = $('breakpointGutter'), editor = $('codeEditor');
-  if (!state.file || !gutter) { gutter?.replaceChildren(); return; }
+  if (!state.file || !gutter) { gutter?.replaceChildren(); renderExecutionLine(); return; }
   const rowHeight = parseFloat(getComputedStyle(editor).lineHeight) || 21;
   const first = Math.max(1, Math.floor(editor.scrollTop / rowHeight) - 1);
   const last = Math.min(editor.value.split('\n').length, Math.ceil((editor.scrollTop + editor.clientHeight) / rowHeight) + 2);
@@ -321,11 +331,15 @@ function renderBreakpointGutter() {
     button.classList.toggle('has-breakpoint', lines.has(line));
     button.classList.toggle('unverified', lines.has(line) && !state.debugAccess);
     button.classList.toggle('rejected', lines.has(line) && state.debugAccess && result?.verified === false);
-    button.title = lines.has(line) ? result?.message || `移除第 ${line} 行断点` : `设置第 ${line} 行断点`;
+    const current = state.debugPaused && state.stoppedAt?.path === state.file.path && state.stoppedAt.line === line;
+    button.classList.toggle('current-execution', current);
+    button.title = current ? `当前停在第 ${line} 行 · ${state.debugReason || '已暂停'}`
+      : lines.has(line) ? result?.message || `移除第 ${line} 行断点` : `设置第 ${line} 行断点`;
     button.setAttribute('aria-label', button.title);
     button.onclick = () => perform(() => toggleBreakpoint(state.file.path, line));
     return button;
   }));
+  renderExecutionLine();
 }
 async function syncBreakpoints(file) {
   if (!state.debugAccess) return;
@@ -852,8 +866,127 @@ function updateScopeNotice() {
     : '探针持续读取，但所选值已超过 2.5 秒不变。读取速率表示取样次数，不表示固件变量在变化；请确认目标正在运行且变量会被更新。';
   notice.classList.remove('hidden');
 }
+function debugSourcePath(source) {
+  const root = String(state.workspace || '').replaceAll('\\', '/').replace(/\/$/, '');
+  const full = String(source || '').replaceAll('\\', '/');
+  if (!root || !full.toLowerCase().startsWith(`${root.toLowerCase()}/`)) return null;
+  return full.slice(root.length + 1);
+}
+function renderDebugPanel() {
+  $('debugPanel').classList.toggle('hidden', !state.connected);
+  $('diagnosticSnapshot').disabled = !state.connected;
+  const stopped = state.debugPaused;
+  $('debugStopIcon').textContent = stopped ? '▶' : '●';
+  $('debugStopIcon').classList.toggle('stopped', stopped);
+  $('debugStopTitle').textContent = stopped ? `已暂停 · ${state.debugReason || '断点'}`
+    : state.debugAccess ? '目标正在运行' : '只读采样连接';
+  const stop = state.stoppedAt;
+  $('debugLocation').textContent = stopped ? stop?.path && stop?.line ? `${stop.path}:${stop.line} · ${stop.pc || 'PC 未知'}`
+    : stop?.pc || '正在读取停住位置…' : '可读取全局诊断状态';
+  $('jumpToStop').disabled = !stopped || !stop?.path || !stop?.line;
+  renderBreakpointGutter();
+}
+async function handleDebugEvent(data) {
+  const revision = ++stopRevision;
+  if (data.event !== 'stopped') {
+    state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null;
+    updateDebugButtons(); renderDebugPanel(); return;
+  }
+  state.debugPaused = true; state.debugReason = data.reason || '断点'; state.stoppedAt = null;
+  updateDebugButtons(); renderDebugPanel();
+  try {
+    const result = await api('/api/debug/snapshot', { ids: [], includeStack: true });
+    if (revision !== stopRevision || !state.debugPaused) return;
+    const frame = result.frame;
+    const relative = debugSourcePath(frame?.source?.path);
+    state.stoppedAt = { path: relative, line: Number.isInteger(frame?.line) ? frame.line : null,
+      pc: frame?.instructionPointerReference || 'PC 未知' };
+    renderDebugPanel();
+    if (relative && state.stoppedAt.line) {
+      try { await navigateTo({ path: relative, line: state.stoppedAt.line }, false); }
+      catch (error) { log(`无法打开停住位置：${error.message}`, 'debug'); }
+    }
+    log(`目标暂停：${state.debugReason} · ${$('debugLocation').textContent}`, 'debug');
+  } catch (error) {
+    if (revision === stopRevision) { $('debugLocation').textContent = `位置读取失败：${error.message}`; log(`位置读取失败：${error.message}`, 'debug'); }
+  }
+}
+const canFields = ['state_bo','state_ep','state_ew','tec','rec','lec','cel_total','ack_total','rx_frames_total','tx_attempts_total','rx_overrun_total','busoff_total','fifo0_fill','fifo1_fill','rx_rate_avg','tx_rate_avg'];
+const pnxStatusNames = ['ok','error','not_configured','invalid_arg','busy','not_initialized','not_connected','empty','too_large','invalid_context'];
+function diagnosticVariables(target) {
+  if (target === 'status') {
+    const query = $('diagnosticFilter').value.trim().toLowerCase();
+    return state.variables.filter(variable =>
+      /(?:^|[.])(?:last_status|status|state|result|error|type)(?:$|[.])|(?:last_status|last_error|error_code)$/i.test(variable.name)
+      && (!query || variable.name.toLowerCase().includes(query))).slice(0, 40);
+  }
+  const bus = Number(target.slice(3));
+  if (!Number.isInteger(bus) || bus < 0 || bus > 2) return [];
+  const field = new RegExp(`can_diag_bus\\.?\\[${bus}\\]\\.([A-Za-z_][A-Za-z_0-9]*)$`, 'i');
+  const candidates = state.variables.filter(variable => field.test(variable.name));
+  candidates.sort((a, b) => canFields.indexOf(a.name.match(field)?.[1]) - canFields.indexOf(b.name.match(field)?.[1]));
+  const sampleCount = state.variables.find(variable => /(?:^|\.)can_diag_sample_count$/.test(variable.name));
+  return [...(sampleCount ? [sampleCount] : []), ...candidates.filter(variable => canFields.includes(variable.name.match(field)?.[1]))].slice(0, 40);
+}
+function canFindings(values, target) {
+  const get = name => {
+    const bus = target.slice(3);
+    const entry = values.find(item => item.name.endsWith(`.${name}`) && new RegExp(`can_diag_bus\\.?\\[${bus}\\]\\.`).test(item.name));
+    return entry?.value == null ? null : Number(entry.value);
+  };
+  const messages = [];
+  if (state.config.params?.value?.can_diag?.enabled === false) messages.push('当前板卡配置关闭了 can_diag；启用后重新编译并烧录才能读取板端指标。');
+  const sample = values.find(item => /can_diag_sample_count$/.test(item.name));
+  if (sample && Number(sample.value) === 0) messages.push('诊断采样计数为 0：可能尚未初始化 CAN，或定时采样尚未运行。');
+  if (get('state_bo') > 0) messages.push('总线当前 Bus Off：优先检查接线、终端电阻、波特率与对端状态。');
+  else if (get('state_ep') > 0) messages.push('总线当前 Error Passive：通信错误较多，查看 TEC/REC 与错误计数。');
+  else if (get('state_ew') > 0) messages.push('总线当前 Error Warning：错误计数已达到警告状态。');
+  if (get('ack_total') > 0) messages.push('累计出现过 ACK 错误：检查对端是否在线、接线及位时序。');
+  if (get('rx_overrun_total') > 0) messages.push('累计出现过接收 FIFO 溢出：检查接收处理和回调耗时。');
+  if (get('tx_attempts_total') === 0) messages.push('未记录到成功入队的发送帧；应用层可能尚未发起发送，或发送在入队前失败。');
+  else if (get('rx_frames_total') === 0) messages.push('已记录发送入队，但尚无接收帧；继续检查对端发送、过滤器和总线接线。');
+  if (!messages.length) messages.push('这些指标未指向明确故障；可结合状态字段、应用层回调与时间变化继续检查。');
+  return messages;
+}
+function statusFindings(values) {
+  const failures = values.filter(item => /\btypes::status\b/.test(item.type) && Number(item.value) > 0);
+  if (failures.length) return failures.slice(0, 8).map(item => {
+    const code = Number(item.value);
+    return `${item.name}: ${pnxStatusNames[code] || `状态码 ${code}`}。请沿该状态字段的写入点检查初始化、配置和调用链。`;
+  });
+  return ['未发现非零的 types::status 全局字段；局部函数返回值不在此快照中。'];
+}
+async function captureDiagnosticSnapshot() {
+  const target = $('diagnosticTarget').value;
+  const variables = diagnosticVariables(target);
+  const findings = $('diagnosticFindings'), details = $('diagnosticValues');
+  findings.replaceChildren(); details.replaceChildren();
+  if (!variables.length) {
+    $('diagnosticSummary').textContent = target === 'status' ? 'ELF 中没有可直接读取的状态全局标量。'
+      : 'ELF 中没有 can_diag_bus 字段；请确认固件启用了 CAN 诊断并包含 DWARF 信息。';
+    return;
+  }
+  $('diagnosticSnapshot').disabled = true;
+  try {
+    const result = await api('/api/debug/snapshot', { ids: variables.map(variable => variable.id) });
+    const read = new Map(result.values.map(item => [item.id, item.value]));
+    const rows = variables.map(variable => ({ name: variable.name, type: variable.type, value: read.get(variable.id) ?? null }));
+    $('diagnosticSummary').textContent = `${target === 'status' ? '状态字段' : `CAN${Number(target.slice(3)) + 1}`} · ${rows.length} 项 · ${new Date().toLocaleTimeString()}`;
+    findings.replaceChildren(...(target === 'status' ? statusFindings(rows) : canFindings(rows, target)).map(message => {
+      const item = document.createElement('p'); item.textContent = message; return item;
+    }));
+    details.replaceChildren(...rows.map(row => {
+      const item = document.createElement('div'); item.className = 'diagnostic-value';
+      const name = document.createElement('span'); name.textContent = `${row.name} · ${row.type}`; name.title = name.textContent;
+      const value = document.createElement('strong');
+      const decoded = /\btypes::status\b/.test(row.type) ? pnxStatusNames[Number(row.value)] : null;
+      value.textContent = row.value == null ? '不可用' : decoded ? `${row.value} (${decoded})` : String(row.value);
+      item.append(name, value); return item;
+    }));
+  } finally { $('diagnosticSnapshot').disabled = !state.connected; }
+}
 function updateDebugButtons() {
-  $('debugState').textContent = state.debugAccess ? (state.debugPaused ? '目标已暂停' : '调试器已连接') : '未连接调试器';
+  $('debugState').textContent = state.debugAccess ? (state.debugPaused ? `已暂停：${state.debugReason || '断点'}` : '调试器已连接') : '未连接调试器';
   $('quickPause').disabled = !state.debugAccess || state.debugPaused;
   $('quickContinue').disabled = !state.debugAccess || !state.debugPaused;
   $('quickStep').disabled = !state.debugAccess || !state.debugPaused;
@@ -875,9 +1008,9 @@ async function connect(mock, allowFlash, allowDebug = false, switchView = true) 
     log(`探针已切换：${result.probe}`);
   }
   clearTimeout(liveTimer); liveTimer = null;
-  setVariableCatalog(result.variables, result.tree); state.connected = true; state.flashAccess = allowFlash && !mock; state.debugAccess = (allowDebug || allowFlash) && !mock; state.debugPaused = false; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
+  setVariableCatalog(result.variables, result.tree); state.connected = true; state.flashAccess = allowFlash && !mock; state.debugAccess = (allowDebug || allowFlash) && !mock; state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null; stopRevision++; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
   $('openVariablePicker').disabled = false; $('subscribe').disabled = false; $('disconnect').disabled = false; $('flash').disabled = !state.config.params;
-  displayVariables(); displaySelectedVariables(); updateConnection(); updateDebugButtons(); updateRecordUi(); renderPlots(); if (switchView) setView('scope'); log(`已连接：${mock ? '模拟目标' : result.board}，变量 ${result.variables.length} 个`, allowDebug ? 'debug' : allowFlash ? 'flash' : 'general');
+  displayVariables(); displaySelectedVariables(); updateConnection(); updateDebugButtons(); renderDebugPanel(); updateRecordUi(); renderPlots(); if (switchView) setView('scope'); log(`已连接：${mock ? '模拟目标' : result.board}，变量 ${result.variables.length} 个`, allowDebug ? 'debug' : allowFlash ? 'flash' : 'general');
   if (state.debugAccess && !allowFlash) await syncAllBreakpoints();
 }
 function receiveSamples(batch) {
@@ -1079,7 +1212,7 @@ async function init() {
   events.addEventListener('log', event => { const data = JSON.parse(event.data); log(typeof data === 'string' ? data : data.text, data.channel || 'general'); });
   events.addEventListener('samples', event => receiveSamples(JSON.parse(event.data)));
   events.addEventListener('catalog', event => { const payload = JSON.parse(event.data); setVariableCatalog(payload.variables || [], payload.tree || []); displayVariables(); displaySelectedVariables(); });
-  events.addEventListener('debug', event => { const data = JSON.parse(event.data); state.debugPaused = data.event === 'stopped'; updateDebugButtons(); $('debugState').textContent = data.event === 'stopped' ? `目标已暂停：${data.reason || '断点'}` : '目标正在运行'; });
+  events.addEventListener('debug', event => { const data = JSON.parse(event.data); perform(() => handleDebugEvent(data)); });
   events.addEventListener('record', event => applyRecordStatus(JSON.parse(event.data)));
   new ResizeObserver(() => scheduleDraw(true)).observe($('plotGrid'));
   $('plotGrid').onscroll = () => scheduleDraw(true);
@@ -1157,7 +1290,10 @@ $('build').onclick = () => perform(buildCurrent);
 $('quickConfigure').onclick = $('configure').onclick;
 $('quickBuild').onclick = $('build').onclick;
 $('quickDebug').onclick = () => perform(async () => { await buildCurrent(); activateTerminal('debug'); await connect(false, false, true, false); });
-for (const [id, command] of [['quickPause','pause'],['quickContinue','continue'],['quickStep','next']]) $(id).onclick = () => perform(async () => { activateTerminal('debug'); await api('/api/debug', { command }); state.debugPaused = command !== 'continue'; updateDebugButtons(); log(`调试命令完成：${command}`, 'debug'); });
+for (const [id, command] of [['quickPause','pause'],['quickContinue','continue'],['quickStep','next']]) $(id).onclick = () => perform(async () => { activateTerminal('debug'); await api('/api/debug', { command }); log(`调试命令完成：${command}`, 'debug'); });
+$('jumpToStop').onclick = () => perform(async () => { if (state.stoppedAt?.path && state.stoppedAt.line) await navigateTo({ path: state.stoppedAt.path, line: state.stoppedAt.line }, false); });
+$('diagnosticSnapshot').onclick = () => perform(captureDiagnosticSnapshot);
+$('diagnosticTarget').onchange = () => { $('diagnosticFilter').classList.toggle('hidden', $('diagnosticTarget').value !== 'status'); $('diagnosticFindings').replaceChildren(); $('diagnosticValues').replaceChildren(); $('diagnosticSummary').textContent = '点击“读取快照”查看当前全局诊断字段。'; };
 $('mock').onclick = () => perform(() => connect(true, false));
 $('attach').onclick = () => perform(() => connect(false, false));
 $('connectFlash').onclick = () => perform(() => connect(false, true));
@@ -1184,10 +1320,10 @@ function resetConnectionUI() {
   if ($('writeDialog').open) $('writeDialog').close();
   variableToWrite = undefined;
   clearTimeout(liveTimer); liveTimer = null;
-  state.connected = false; state.flashAccess = false; state.debugAccess = false; state.debugPaused = false; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.latest = []; state.points = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; setVariableCatalog([], []); state.expandedVariables.clear(); state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = 0; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); state.recording = false; updateScopeNotice();
+  state.connected = false; state.flashAccess = false; state.debugAccess = false; state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null; stopRevision++; state.selected = []; state.activeIds = []; state.activeIndex.clear(); state.latest = []; state.points = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; setVariableCatalog([], []); state.expandedVariables.clear(); state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = 0; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); state.recording = false; updateScopeNotice();
   if ($('variablePicker').open) $('variablePicker').close();
   $('disconnect').disabled = true; $('flash').disabled = true; $('openVariablePicker').disabled = true; $('subscribe').disabled = true;
-  $('metrics').textContent = '尚未采集数据'; state.breakpointResults.clear(); updateConnection(); updateDebugButtons(); renderBreakpointGutter(); displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();
+  $('metrics').textContent = '尚未采集数据'; state.breakpointResults.clear(); updateConnection(); updateDebugButtons(); renderDebugPanel(); $('diagnosticFindings').replaceChildren(); $('diagnosticValues').replaceChildren(); displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();
 }
 $('disconnect').onclick = () => perform(disconnect);
 $('scopeDisconnect').onclick = () => perform(disconnect);

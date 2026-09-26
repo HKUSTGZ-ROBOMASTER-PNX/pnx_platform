@@ -57,3 +57,15 @@ test('mock DAP adapter verifies a typed scalar write without touching hardware',
     assert.equal(result.autoPaused, false);
   } finally { await session.stop(); }
 });
+
+test('debug snapshot reads globals and the stopped program counter without changing subscriptions', { timeout: 15000 }, async () => {
+  const session = new DapSession(() => {}, () => {});
+  try {
+    await session.start({ mock: true, rate: 1000, allowDebug: true });
+    const snapshot = await session.debugSnapshot(['mock.ramp'], true);
+    assert.equal(snapshot.values.length, 1);
+    assert.equal(snapshot.values[0].id, 'mock.ramp');
+    assert.match(snapshot.frame.instructionPointerReference, /^0x[\da-f]+$/i);
+    assert.deepEqual(session.ids, []);
+  } finally { await session.stop(); }
+});

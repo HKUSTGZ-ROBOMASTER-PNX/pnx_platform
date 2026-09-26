@@ -508,6 +508,16 @@ async function route(req, res) {
     await session.debug(input.command);
     json(res, 200, { ok: true, command: input.command }); return;
   }
+  if (url.pathname === '/api/debug/snapshot' && req.method === 'POST') {
+    if (!session || session.closed) throw new Error('Connect a target first');
+    const ids = input.ids ?? [];
+    if (!Array.isArray(ids) || ids.length > 40 || ids.some(id => typeof id !== 'string')) throw new Error('Invalid diagnostic variables');
+    const allowed = new Set(globalScalars(catalog).map(item => item.id));
+    if (ids.some(id => !allowed.has(id))) throw new Error('Diagnostic variable is not a direct global scalar');
+    const includeStack = input.includeStack === true;
+    if (includeStack && (session.meta?.mock || !session.meta?.allowDebug)) throw new Error('Connect a real board in debug mode to inspect the stopped location');
+    json(res, 200, await session.debugSnapshot([...new Set(ids)], includeStack)); return;
+  }
   if (url.pathname === '/api/debug/breakpoints' && req.method === 'POST') {
     if (!session || session.closed || session.meta?.mock || !session.meta?.allowDebug) throw new Error('Connect a real board in debug mode first');
     if (!session.meta.elfPath || !existsSync(session.meta.elfPath) || hashFile(session.meta.elfPath) !== session.meta.elfHash)

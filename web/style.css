@@ -210,6 +210,27 @@ body[data-view="editor"] #codeArea,body[data-view="scope"] #scopeArea,body[data-
 #activityBar .activity-button.active{background:var(--pnx-accent-bg);color:var(--pnx-accent)}
 .activity-icon{display:block;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
 
+/* Source stop marker and compact debugger controls. */
+.editor-icon-button{display:grid;place-items:center;width:31px;min-width:31px;height:29px;padding:4px!important}
+.editor-icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+#quickContinue svg{fill:currentColor;stroke:none}
+.toolbar-separator{height:19px;width:1px;background:var(--pnx-border-strong);margin:0 3px}
+.debug-panel{flex:none;max-height:215px;overflow:auto;padding:8px 13px;border-bottom:1px solid var(--pnx-border);background:#191b21;color:var(--pnx-text);font-size:11px}
+.debug-stop-row,.debug-diagnostic-row{display:flex;align-items:center;gap:9px;min-height:27px}
+.debug-stop-row strong{white-space:nowrap}.debug-stop-row>span:nth-child(3){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--pnx-muted);font:11px Consolas,"Cascadia Code",monospace;flex:1}
+.debug-stop-icon{color:var(--pnx-muted);width:14px;text-align:center}.debug-stop-icon.stopped{color:#e4bd5d}
+.debug-stop-row button,.debug-diagnostic-row button{padding:4px 8px;font-size:10px}
+.debug-diagnostic-row{margin-top:5px}.debug-diagnostic-row label{display:inline;color:var(--pnx-muted);white-space:nowrap;font-size:10px}.debug-diagnostic-row select{width:150px;padding:3px 5px;font-size:10px}.debug-diagnostic-row>span{color:var(--pnx-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.debug-diagnostic-row input{width:170px;padding:3px 7px;font-size:10px}
+.diagnostic-findings{display:grid;gap:3px;margin-top:7px}.diagnostic-findings p{margin:0;padding:4px 8px;border-left:2px solid #c9a967;background:#29271f;color:#dfcfab;line-height:1.45}
+.diagnostic-values{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:3px 12px;margin-top:7px}.diagnostic-value{display:flex;gap:8px;justify-content:space-between;min-width:0;padding:3px 6px;border:1px solid var(--pnx-border);border-radius:4px;font:10px Consolas,"Cascadia Code",monospace}.diagnostic-value span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--pnx-muted)}.diagnostic-value strong{flex:none;color:#b9c4ff;font-weight:500}
+#executionLine{display:none;position:absolute;left:63px;right:0;z-index:0;background:rgba(223,181,76,.12);border-top:1px solid rgba(223,181,76,.32);border-bottom:1px solid rgba(223,181,76,.32);pointer-events:none}
+#executionLine.visible{display:block}
+#codeHighlight{z-index:1;background:transparent!important}#codeEditor{z-index:2}#breakpointGutter{z-index:3}
+.breakpoint-line.current-execution{background:rgba(223,181,76,.19);color:#f3df9e}
+.breakpoint-line.current-execution::after{content:"";position:absolute;left:7px;top:5px;width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-left:10px solid #e8be53}
+.breakpoint-line.current-execution.has-breakpoint::before{left:22px}
+
 .plot-controls{flex-wrap:wrap}
 .plot-controls label{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .plot-controls #plotTimeWindow{width:70px;padding:5px 6px;font-size:11px}
