@@ -67,7 +67,7 @@ node scripts/electron-ui-smoke.mjs <PnX-Platform.exe 路径>
 
 `.github/workflows/release.yml` 在推送 `vMAJOR.MINOR.PATCH` 标签时构建 Windows x64 安装 EXE/ZIP、Linux x64 tar.gz、macOS Intel/Apple Silicon DMG 及校验清单。四个平台全部通过测试后创建 GitHub Release。构建仅使用本仓库，所需 Rust、MinGW 和 Electron 由 runner 安装；Electron 下载校验 SHA256。
 
-首次启用时，先提交并推送 workflow 到默认分支。在 Actions → Build and publish release → Run workflow 中输入已有标签（如 `v1.0.0`）即可补发；构建会检出该标签的代码并核对版本。以后新版本提交后推送新标签即可触发。重跑已有 Release 会更新同名附件。发布 job 使用仓库自带的 `GITHUB_TOKEN`，无需个人 token；仓库需允许 GitHub Actions 运行。
+首次启用时，先提交并推送 workflow 到默认分支。在 Actions → Build and publish release → Run workflow 中输入已有标签（如 `v1.0.0`）即可补发；构建会检出该标签的代码，并从标签统一写入 package.json、Rust workspace 与内部包的 Cargo.lock 版本；工作流不回写提交。新发布先运行 `node scripts/release-version.mjs v1.1.3`（换成目标版本），提交后创建并推送同名标签。不要重复使用已有失败标签；旧标签保留原始代码及工作流，直接重跑无法获取后续修复。重跑已有 Release 会更新同名附件。发布 job 使用仓库自带的 `GITHUB_TOKEN`，无需个人 token；仓库需允许 GitHub Actions 运行。
 
 
 ## 插件与重构边界
