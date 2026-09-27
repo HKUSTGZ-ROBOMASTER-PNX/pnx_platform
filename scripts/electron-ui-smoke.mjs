@@ -189,6 +189,22 @@ try {
   assert.ok(editor.highlighted > 0);
   assert.match(editor.active, /app\.cpp/);
   assert.equal(editor.buttons, true);
+  const editorKeys = await evaluate(`(() => {
+    const input = document.getElementById('codeEditor');
+    const original = input.value;
+    const focused = document.activeElement === input;
+    input.setSelectionRange(0, 0);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true }));
+    const tabIndented = input.value.startsWith('    ');
+    input.setSelectionRange(0, input.value.length);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '/', code: 'Slash', ctrlKey: true, bubbles: true, cancelable: true }));
+    const commented = input.value.startsWith('    // ');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '/', code: 'Slash', ctrlKey: true, bubbles: true, cancelable: true }));
+    const uncommented = input.value.startsWith('    int');
+    input.value = original; state.file.value = original; updateEditor(); highlightCode();
+    return { focused, tabIndented, commented, uncommented };
+  })()`);
+  assert.deepEqual(editorKeys, { focused: true, tabIndented: true, commented: true, uncommented: true });
   const editorScreenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(path.join(root, '.cache', 'electron-ui-editor.png'), Buffer.from(editorScreenshot.data, 'base64'));
 

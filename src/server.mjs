@@ -390,7 +390,7 @@ async function route(req, res) {
     const page = readFileSync(path.join(webDir, 'index.html'), 'utf8').replace('__PNX_TOKEN__', token);
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(page); return;
   }
-  if (['/app.js', '/markdown.js'].includes(url.pathname) && req.method === 'GET') {
+  if (['/app.js', '/markdown.js', '/editor-editing.js'].includes(url.pathname) && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(readFileSync(path.join(webDir, url.pathname.slice(1)))); return;
   }

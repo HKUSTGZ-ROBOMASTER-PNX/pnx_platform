@@ -466,6 +466,7 @@ function activateFile(path) {
   state.file = file; $('codeEditor').value = file.value; $('codeEditor').scrollTop = file.scrollTop || 0; $('codeEditor').scrollLeft = file.scrollLeft || 0;
   for (const row of document.querySelectorAll('#fileTree .tree-row')) { const active = row.dataset.path === path; row.classList.toggle('active', active); row.setAttribute('aria-selected', String(active)); }
   updateEditor(); highlightCode(); syncHighlightScroll(); renderBreakpointGutter(); setView('editor');
+  $('codeEditor').focus();
 }
 async function closeFile(path) {
   const file = state.files.get(path); if (!file) return;
@@ -1520,6 +1521,23 @@ $('probe').oninput = () => { $('probeList').selectedIndex = -1; };
 $('openFolder').onclick = () => perform(openFolder);
 $('markdownToggle').onclick = () => { if (state.file) { state.file.previewMarkdown = !state.file.previewMarkdown; updateEditor(); } };
 $('codeEditor').oninput = () => { if (state.file) state.file.value = $('codeEditor').value; updateEditor(); scheduleHighlight(); };
+$('codeEditor').addEventListener('keydown', event => {
+  const comment = (event.ctrlKey || event.metaKey) && (event.code === 'Slash' || event.key === '/');
+  const tab = event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey;
+  if (!state.file || (!comment && !tab)) return;
+  event.preventDefault();
+  const editor = $('codeEditor');
+  const result = window.editCodeSelection(editor.value, editor.selectionStart, editor.selectionEnd,
+    comment ? 'comment' : event.shiftKey ? 'outdent' : 'indent', state.file.path);
+  if (result.text === editor.value) return;
+  const before = editor.value;
+  let first = 0, last = 0;
+  while (first < before.length && first < result.text.length && before[first] === result.text[first]) first++;
+  while (last < before.length - first && last < result.text.length - first && before[before.length - 1 - last] === result.text[result.text.length - 1 - last]) last++;
+  editor.setRangeText(result.text.slice(first, result.text.length - last), first, before.length - last, 'preserve');
+  editor.setSelectionRange(result.start, result.end);
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
+});
 $('codeEditor').onscroll = () => { if (state.file) { state.file.scrollTop = $('codeEditor').scrollTop; state.file.scrollLeft = $('codeEditor').scrollLeft; } syncHighlightScroll(); renderBreakpointGutter(); };
 function hideDefinitionOverlay() { $('definitionOverlay').classList.remove('active'); }
 function showDefinitionOverlay() {
