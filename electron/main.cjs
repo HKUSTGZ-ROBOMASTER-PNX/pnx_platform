@@ -106,6 +106,15 @@ async function createWindow() {
   });
   window.on('closed', () => { window = null; trace('window closed'); });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const isLocalMedia = (contents, url) => {
+    try { return contents === window?.webContents && new URL(url).origin === new URL(origin).origin; } catch { return false; }
+  };
+  window.webContents.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
+    permission === 'media' && isLocalMedia(contents, requestingOrigin) && details.mediaType === 'video');
+  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(permission === 'media' && isLocalMedia(contents, details.requestingUrl || contents?.getURL()) &&
+      Array.isArray(details.mediaTypes) && details.mediaTypes.length > 0 && details.mediaTypes.every(type => type === 'video'));
+  });
   window.webContents.on('will-navigate', (event, url) => { if (!url.startsWith(origin)) event.preventDefault(); });
   window.webContents.on('render-process-gone', (_event, details) => trace(`renderer gone: ${JSON.stringify(details)}`));
   window.webContents.on('did-fail-load', (_event, code, description, url) => trace(`load failed: ${code} ${description} ${url}`));

@@ -198,7 +198,7 @@ function updateConfigFrame() {
   }
 }
 function setView(view) {
-  if (!['editor', 'scope', 'config', 'tools'].includes(view)) return;
+  if (!['editor', 'scope', 'config', 'tools', 'bullet'].includes(view)) return;
   state.view = view;
   document.body.dataset.view = view;
   for (const button of document.querySelectorAll('[data-view-target]')) {

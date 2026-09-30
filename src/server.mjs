@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { ReceiverService } from './bullet/receiver.mjs';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
@@ -23,6 +24,7 @@ import { ProjectSettings, resolveTarget } from './project-settings.mjs';
 import { bindingKinds, bindingValue, boardDefaults, fields, get, motorFields, motorModes, parameterActive, setPath, testRequirements, validate } from './plugins/pnx/config-editor.mjs';
 
 const token = randomBytes(24).toString('hex');
+const bulletReceiver = new ReceiverService();
 const clients = new Set();
 let session;
 let sessionTransition = Promise.resolve();
@@ -386,6 +388,11 @@ async function connectSession(input) {
 }
 async function route(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
+  const bulletFiles = { '/bullet.js': 'text/javascript', '/bullet-core.mjs': 'text/javascript', '/bullet-worker.mjs': 'text/javascript', '/bullet-input.mjs': 'text/javascript', '/bullet.css': 'text/css' };
+  if (Object.hasOwn(bulletFiles, url.pathname) && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': `${bulletFiles[url.pathname]}; charset=utf-8`, 'Cache-Control': 'no-store' });
+    res.end(readFileSync(path.join(webDir, 'bullet', url.pathname.slice(1)))); return;
+  }
   if (url.pathname === '/' && req.method === 'GET') {
     const page = readFileSync(path.join(webDir, 'index.html'), 'utf8').replace('__PNX_TOKEN__', token);
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(page); return;
@@ -415,6 +422,20 @@ async function route(req, res) {
     res.end(readFileSync(path.join(webDir, 'plugins', 'pnx', 'config-editor.css'))); return;
   }
   if (req.headers['x-pnx-token'] !== token && url.searchParams.get('token') !== token) { json(res, 403, { error: 'Invalid local session token' }); return; }
+  if (url.pathname === '/api/bullet/receiver/info' && req.method === 'GET') { json(res, 200, bulletReceiver.info()); return; }
+  if (url.pathname === '/api/bullet/receiver/devices' && req.method === 'POST') { json(res, 200, await bulletReceiver.devices(await body(req))); return; }
+  if (url.pathname === '/api/bullet/receiver/start' && req.method === 'POST') { json(res, 200, await bulletReceiver.start(await body(req))); return; }
+  if (url.pathname === '/api/bullet/receiver/stop' && req.method === 'POST') {
+    const input = await body(req);
+    if (typeof input.session !== 'string') throw new Error('Missing receiver session');
+    await bulletReceiver.stop(input.session); json(res, 200, { ok: true }); return;
+  }
+  if (url.pathname === '/api/bullet/receiver/frame' && req.method === 'GET') {
+    const value = bulletReceiver.frame(url.searchParams.get('session'), Number(url.searchParams.get('after')) || 0);
+    if (!value) { res.writeHead(204, { 'Cache-Control': 'no-store' }); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Frame-Sequence': String(value.sequence), 'X-Frame-Timestamp': String(value.timestamp) });
+    res.end(value.frame); return;
+  }
   if (url.pathname === '/api/events' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
     clients.add(res); res.write(`event: status\ndata: ${JSON.stringify(lastStatus)}\n\n`);
@@ -637,7 +658,7 @@ server.listen(0, '127.0.0.1', () => {
   const address = server.address();
   process.stdout.write(`PnX Platform: http://127.0.0.1:${address.port}/\n`);
 });
-process.on('SIGINT', async () => { await stopSession(); server.close(); });
+process.on('SIGINT', async () => { await Promise.allSettled([stopSession(), bulletReceiver.stop()]); server.close(); });
 process.stdin.setEncoding('utf8');
 let stdinCommands = '';
 process.stdin.on('data', chunk => {
@@ -645,5 +666,5 @@ process.stdin.on('data', chunk => {
   if (stdinCommands.length > 128) stdinCommands = stdinCommands.slice(-128);
   if (!stdinCommands.includes('shutdown\n')) return;
   process.stdin.pause();
-  void stopSession().finally(() => process.exit(0));
+  void Promise.allSettled([stopSession(), bulletReceiver.stop()]).finally(() => process.exit(0));
 });

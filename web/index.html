@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PnX Platform</title><link rel="stylesheet" href="/style.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PnX Platform</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/bullet.css"></head>
 <body data-view="editor">
 <header class="titlebar">
   <div class="brand"><span class="brand-mark">P</span><span class="brand-name">PnX Platform</span></div>
   <nav class="view-tabs" aria-label="工作区视图">
     <button class="view-switch active" data-view-target="editor" aria-pressed="true">编辑器</button>
     <button class="view-switch" data-view-target="scope" aria-pressed="false">实时曲线</button>
+    <button class="view-switch" data-view-target="bullet" aria-pressed="false">弹丸检测</button>
     <button class="view-switch" data-view-target="config" aria-pressed="false">设置与构建</button>
   </nav>
   <div class="title-actions"><button id="themeToggle" title="切换浅色模式" aria-label="切换浅色模式">浅色</button><button id="projectSettings">目标与插件</button><button id="openFolder">打开文件夹</button></div>
@@ -29,6 +30,7 @@
     <button class="activity-button" data-view-target="config" aria-label="设置与构建" title="设置与构建"><svg class="activity-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h3m4 0h9M4 12h10m4 0h2M4 18h5m4 0h7"/><circle cx="9" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg></button>
   </nav>
 
+  <section id="bulletArea" class="view-bullet" aria-label="弹丸荧光检测"></section>
   <aside id="explorer" class="sidebar view-editor">
     <div class="sidebar-heading"><h2>资源管理器</h2><div class="explorer-actions"><button id="refreshExplorer" title="刷新资源管理器" aria-label="刷新资源管理器">↻</button><button id="collapseExplorer" title="折叠所有文件夹" aria-label="折叠所有文件夹">⊟</button></div></div>
     <div id="folderRoot" class="folder-root">尚未打开文件夹</div>
@@ -123,4 +125,5 @@
 </div>
 <footer id="statusBar"><span id="workspaceLabel">打开文件夹以开始编辑</span><span id="status" class="header-status">启动中…</span></footer>
 <script>window.PNX_TOKEN = '__PNX_TOKEN__';</script><script src="/markdown.js"></script><script src="/pnx-diagnostics.js"></script><script src="/editor-editing.js"></script><script src="/app.js"></script>
+<script type="module" src="/bullet.js"></script>
 </body></html>
