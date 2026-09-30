@@ -4,7 +4,7 @@ const colors = ['#5ee1a8','#ffbd69','#6db6ff','#ff7397','#bb9aff','#f0e07b','#6d
 const BANK_CHANNELS = 256;
 const PLOT_PAGE_SIZE = 64;
 const state = { board: 'h723_mc02', preset: 'h723-debug', config: {}, hardware: {}, variables: [], selected: [], activeIds: [], activeIndex: new Map(), points: [], latest: [], series: new Map(), latestById: new Map(), latestAtById: new Map(), firstTimestampNs: null, lastTimestampNs: 0, banks: 1, bankSize: BANK_CHANNELS, bankDwellMs: 0, streamEpoch: null, sampleCount: 0, droppedFrames: 0, rateWindow: [], lastSampleAt: 0, connected: false, flashAccess: false,
-  projectProfile: null, debugAccess: false, debugPaused: false, debugReason: '', stoppedAt: null, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plotGroups: [{ id: 'default', name: '默认组' }], activePlotGroup: 'default', plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
+  projectProfile: null, debugAccess: false, debugPaused: false, debugReason: '', stoppedAt: null, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plotGroups: [{ id: 'default', name: '默认组' }], activePlotGroup: 'default', plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), variableColors: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
   observedValues: new Map(), valueChangedAt: new Map(), valueSeenAt: new Map(), recording: false, recordFile: null, recordRows: 0, recordError: null, missingTools: [] };
 async function api(route, data) {
   const response = await fetch(route, { method: data === undefined ? 'GET' : 'POST', headers: { 'X-PnX-Token': token, 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
@@ -736,7 +736,7 @@ function displayVariables() {
       const box = document.createElement('input'); box.type = 'checkbox'; box.value = node.id;
       box.checked = selected.has(node.id); label.classList.toggle('selected', box.checked);
       box.onchange = () => changeVariableSelection([node.id], box.checked);
-      const swatch = document.createElement('i'); swatch.className = 'variable-swatch'; swatch.style.background = box.checked ? colors[state.selected.indexOf(node.id) % colors.length] : '#596575';
+      const swatch = document.createElement('i'); swatch.className = 'variable-swatch'; swatch.style.background = box.checked ? curveColor(node.id) : '#596575';
       const name = document.createElement('span'); name.className = 'variable-name'; name.textContent = node.name || variable.name; name.title = node.expression || variable.name; label.append(box, swatch, name);
       if (box.checked) { const destination = document.createElement('select'); destination.setAttribute('aria-label', `${variable.name} 所在曲线`); destination.replaceChildren(option('watch-only', '仅查看 / 修改'), ...state.plots.map(plot => option(plot.id, plotGroupLabel(plot)))); destination.value = state.plotAssignments.get(node.id) || state.plots[0].id; destination.onclick = event => event.stopPropagation(); destination.onchange = () => { state.plotAssignments.set(node.id, destination.value); renderPlots(); savePlotLayout(); }; label.append(destination); }
       if (variable.writable && state.debugAccess && state.connected) { const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'variable-write'; edit.textContent = '✎'; edit.title = `修改 ${variable.name} (${variable.type})`; edit.setAttribute('aria-label', edit.title); edit.onclick = event => { event.preventDefault(); event.stopPropagation(); openVariableWrite(variable); }; label.append(edit); }
@@ -780,7 +780,7 @@ function displaySelectedVariables() {
     rendered.add(id);
     const row = document.createElement('div'); row.className = 'selected-variable-row'; row.dataset.variableId = id;
     const top = document.createElement('div'); top.className = 'selected-variable-top';
-    const swatch = document.createElement('i'); swatch.className = 'variable-swatch'; swatch.style.background = colors[index % colors.length];
+    const swatch = document.createElement('i'); swatch.className = 'variable-swatch'; swatch.style.background = curveColor(id);
     const name = document.createElement('span'); name.className = 'selected-variable-name'; name.textContent = label || variable.name; name.title = `${variable.name} · ${variable.type || ''}`;
     const value = document.createElement('strong'); value.className = 'selected-variable-value'; value.textContent = '—'; value.setAttribute('aria-label', `${variable.name} 当前值`);
     top.append(swatch, name, value);
@@ -889,11 +889,19 @@ let nextPlotId = 2, drawPending = false, lastDraw = 0, liveTimer;
 const PLOT_MAX_SECONDS = 120;
 const PLOT_SAMPLE_BUDGET = 300000;
 function timeWindowSeconds(value) { return Math.max(0.1, Math.min(PLOT_MAX_SECONDS, Number.isFinite(Number(value)) ? Number(value) : 10)); }
+function defaultCurveColor(id) {
+  const selectedIndex = state.selected.indexOf(id), activeIndex = state.activeIndex.get(id);
+  return colors[(selectedIndex >= 0 ? selectedIndex : activeIndex || 0) % colors.length];
+}
+function curveColor(id) {
+  const custom = state.variableColors.get(id);
+  return /^#[0-9a-f]{6}$/i.test(custom || '') ? custom : defaultCurveColor(id);
+}
 function plotView(id) {
   if (!state.plotViews.has(id)) state.plotViews.set(id, { seconds: timeWindowSeconds($('plotTimeWindow').value), paused: false, anchorNs: null, snapshot: null });
   return state.plotViews.get(id);
 }
-function savePlotLayout() { try { localStorage.setItem('pnx-plots', JSON.stringify({ groups: state.plotGroups, activeGroup: state.activePlotGroup, plots: state.plots, assignments: [...state.plotAssignments], columns: $('plotColumns').value, seconds: timeWindowSeconds($('plotTimeWindow').value), windows: [...state.plotViews].map(([id, view]) => [id, view.seconds]) })); } catch { /* Storage can be disabled. */ } }
+function savePlotLayout() { try { localStorage.setItem('pnx-plots', JSON.stringify({ groups: state.plotGroups, activeGroup: state.activePlotGroup, plots: state.plots, assignments: [...state.plotAssignments], colors: [...state.variableColors], columns: $('plotColumns').value, seconds: timeWindowSeconds($('plotTimeWindow').value), windows: [...state.plotViews].map(([id, view]) => [id, view.seconds]) })); } catch { /* Storage can be disabled. */ } }
 function resetPlotViews() {
   for (const view of state.plotViews.values()) { view.paused = false; view.anchorNs = null; view.snapshot = null; }
 }
@@ -986,23 +994,51 @@ function reorderPlot(sourceId, targetId) {
   renderPlots(); savePlotLayout();
 }
 function openOscilloscopeSettings(plot) {
+  if (!plot) return;
   const dialog = document.createElement('dialog'); dialog.className = 'scope-properties';
-  const title = document.createElement('h3'); title.textContent = `Oscilloscope · ${plot.name}`;
-  const hint = document.createElement('p'); hint.textContent = '选择此图显示的变量。未分配的变量仍自动更新数值。';
-  const rows = document.createElement('div'); rows.className = 'scope-property-variables';
+  const title = document.createElement('h2'); title.textContent = `曲线配置 · ${plot.name}`;
+  const hint = document.createElement('p'); hint.textContent = '配置曲线名称、时间窗、显示变量和颜色。未显示的变量仍保留在监看表中。';
+  const general = document.createElement('div'); general.className = 'scope-property-general';
+  const nameLabel = document.createElement('label'); nameLabel.textContent = '曲线名称';
+  const name = document.createElement('input'); name.value = plot.name; name.maxLength = 80; name.setAttribute('aria-label', '曲线名称'); nameLabel.append(name);
+  const windowLabel = document.createElement('label'); windowLabel.textContent = '时间窗（秒）';
+  const seconds = document.createElement('input'); seconds.type = 'number'; seconds.min = '0.1'; seconds.max = String(PLOT_MAX_SECONDS); seconds.step = '0.1'; seconds.value = String(plotView(plot.id).seconds); seconds.setAttribute('aria-label', '曲线时间窗'); windowLabel.append(seconds);
+  general.append(nameLabel, windowLabel);
+  const table = document.createElement('div'); table.className = 'scope-property-variables'; table.setAttribute('role', 'table'); table.setAttribute('aria-label', `${plot.name} 变量配置`);
+  const head = document.createElement('div'); head.className = 'scope-property-row scope-property-head'; head.setAttribute('role', 'row');
+  for (const text of ['显示', '颜色', '变量', '当前分配']) { const cell = document.createElement('span'); cell.textContent = text; cell.setAttribute('role', 'columnheader'); head.append(cell); }
+  table.append(head);
   const choices = state.selected.map(id => {
-    const label = document.createElement('label'), input = document.createElement('input'); input.type = 'checkbox'; input.checked = state.plotAssignments.get(id) === plot.id;
-    label.append(input, document.createTextNode(state.variableById.get(id)?.name || id)); rows.append(label); return {id,input};
+    const row = document.createElement('div'); row.className = 'scope-property-row'; row.setAttribute('role', 'row');
+    const enabled = document.createElement('input'); enabled.type = 'checkbox'; enabled.checked = state.plotAssignments.get(id) === plot.id; enabled.setAttribute('aria-label', `在 ${plot.name} 显示 ${state.variableById.get(id)?.name || id}`);
+    const colorCell = document.createElement('div'); colorCell.className = 'scope-property-color';
+    const color = document.createElement('input'); color.type = 'color'; color.value = curveColor(id); color.setAttribute('aria-label', `${state.variableById.get(id)?.name || id} 曲线颜色`);
+    const reset = document.createElement('button'); reset.type = 'button'; reset.textContent = '↺'; reset.title = '恢复自动颜色'; reset.setAttribute('aria-label', '恢复自动颜色');
+    let customColor = state.variableColors.has(id);
+    color.oninput = () => { customColor = true; };
+    reset.onclick = () => { customColor = false; color.value = defaultCurveColor(id); };
+    colorCell.append(color, reset);
+    const variable = document.createElement('span'); variable.className = 'scope-property-name'; variable.textContent = state.variableById.get(id)?.name || id; variable.title = variable.textContent;
+    const assigned = document.createElement('span'); assigned.className = 'scope-property-assigned';
+    const assignedPlot = state.plots.find(item => item.id === state.plotAssignments.get(id)); assigned.textContent = assignedPlot ? plotGroupLabel(assignedPlot) : '仅查看 / 修改';
+    row.append(enabled, colorCell, variable, assigned); table.append(row);
+    return {id,enabled,color,get customColor(){return customColor;}};
   });
+  if (!choices.length) { const empty = document.createElement('p'); empty.className = 'scope-property-empty'; empty.textContent = '请先从左侧添加变量。'; table.append(empty); }
+  const actions = document.createElement('div'); actions.className = 'scope-property-actions';
   const cancel = document.createElement('button'); cancel.textContent = '取消'; cancel.onclick = () => dialog.close();
-  const save = document.createElement('button'); save.textContent = '应用'; save.onclick = () => {
-    for (const {id,input} of choices) if (state.selected.includes(id)) {
-      if (input.checked) state.plotAssignments.set(id, plot.id);
-      else if (state.plotAssignments.get(id) === plot.id) state.plotAssignments.set(id, 'watch-only');
+  const save = document.createElement('button'); save.className = 'primary'; save.textContent = '应用配置'; save.onclick = () => {
+    plot.name = name.value.trim() || plot.name;
+    const nextSeconds = timeWindowSeconds(seconds.value); plotView(plot.id).seconds = nextSeconds;
+    for (const choice of choices) if (state.selected.includes(choice.id)) {
+      if (choice.enabled.checked) state.plotAssignments.set(choice.id, plot.id);
+      else if (state.plotAssignments.get(choice.id) === plot.id) state.plotAssignments.set(choice.id, 'watch-only');
+      if (choice.customColor) state.variableColors.set(choice.id, choice.color.value.toLowerCase()); else state.variableColors.delete(choice.id);
     }
     renderPlots(); displaySelectedVariables(); displayVariables(); savePlotLayout(); dialog.close();
   };
-  dialog.append(title,hint,rows,cancel,save); dialog.onclose = () => dialog.remove(); document.body.append(dialog); dialog.showModal();
+  actions.append(cancel, save);
+  dialog.append(title,hint,general,table,actions); dialog.onclose = () => dialog.remove(); document.body.append(dialog); dialog.showModal(); name.focus(); name.select();
 }
 function plotGroupLabel(plot) { return `${state.plotGroups.find(group => group.id === (plot.groupId || 'default'))?.name || '默认组'} / ${plot.name}`; }
 function renderPlotGroups() {
@@ -1039,7 +1075,7 @@ function renderPlots() {
       button.onclick = () => { state.plotPages.set(plot.id, page + delta); renderPlots(); };
       header.append(button);
     }
-    const settings = document.createElement('button'); settings.textContent = '⚙'; settings.title = 'Oscilloscope · 曲线设置'; settings.setAttribute('aria-label', '曲线设置'); settings.onclick = () => openOscilloscopeSettings(plot); header.append(settings);
+    const settings = document.createElement('button'); settings.textContent = '⚙'; settings.title = '曲线配置：变量、颜色与时间窗'; settings.setAttribute('aria-label', '曲线配置'); settings.onclick = () => openOscilloscopeSettings(plot); header.append(settings);
     if (state.plots.length > 1) for (const [symbol, direction] of [['←',-1],['→',1]]) { const move = document.createElement('button'); move.textContent = symbol; move.title = direction < 0 ? '向前移动曲线' : '向后移动曲线'; const position = state.plots.indexOf(plot); move.disabled = position + direction < 0 || position + direction >= state.plots.length; move.onclick = () => reorderPlot(plot.id, state.plots[position + direction].id); header.append(move); }
     if (state.plots.length > 1) { const remove = document.createElement('button'); remove.textContent = '×'; remove.title = '移除曲线'; remove.onclick = () => { state.plots = state.plots.filter(item => item.id !== plot.id); state.plotPages.delete(plot.id); state.plotViews.delete(plot.id); for (const [id, assigned] of state.plotAssignments) if (assigned === plot.id) state.plotAssignments.set(id, state.plots[0].id); renderPlots(); displayVariables(); displaySelectedVariables(); savePlotLayout(); }; header.append(remove); }
     let drag = null;
@@ -1072,17 +1108,23 @@ function renderPlots() {
     action('暂停', '冻结此曲线画面；采集与 CSV 记录继续', 'plot-pause', () => togglePlotPause(card));
     action('全屏', '将此曲线全屏显示', 'plot-fullscreen', () => perform(async () => { if (document.fullscreenElement === card) await document.exitFullscreen(); else await card.requestFullscreen(); }));
     action('PNG', '导出当前曲线视图为 PNG', 'plot-export', () => perform(() => exportPlot(card)));
-    const body = document.createElement('div'); body.className = 'plot-body'; const canvas = document.createElement('canvas'); canvas.setAttribute('aria-label', `${plot.name} 实时曲线`); body.append(canvas);
+    const body = document.createElement('div'); body.className = 'plot-body'; const canvas = document.createElement('canvas'); canvas.setAttribute('aria-label', `${plot.name} 实时曲线`);
+    const cursor = document.createElement('div'); cursor.className = 'plot-cursor hidden';
+    const markers = document.createElement('div'); markers.className = 'plot-cursor-markers hidden';
+    const tooltip = document.createElement('div'); tooltip.className = 'plot-tooltip hidden'; tooltip.setAttribute('role', 'status');
+    body.append(canvas, cursor, markers, tooltip);
     let plotDrag = null;
-    canvas.onpointerdown = event => { if (event.button !== 0 || !state.lastTimestampNs) return; plotDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, anchor: plotView(plot.id).anchorNs ?? plotData(plot.id).lastTimestampNs, moved: false }; canvas.setPointerCapture(event.pointerId); };
+    canvas.onpointerdown = event => { if (event.button !== 0 || !state.lastTimestampNs) return; hidePlotHover(card); plotDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, anchor: plotView(plot.id).anchorNs ?? plotData(plot.id).lastTimestampNs, moved: false }; canvas.setPointerCapture(event.pointerId); };
     canvas.onpointermove = event => {
-      if (!plotDrag || plotDrag.id !== event.pointerId) return;
+      if (!plotDrag) { updatePlotHover(card, event); return; }
+      if (plotDrag.id !== event.pointerId) return;
       if (!plotDrag.moved && Math.hypot(event.clientX - plotDrag.x, event.clientY - plotDrag.y) < 4) return;
       plotDrag.moved = true; canvas.classList.add('panning');
       panPlot(card, event.clientX - plotDrag.x, canvas.getBoundingClientRect().width - 76, plotDrag.anchor);
     };
-    canvas.onpointerup = event => { if (plotDrag?.id === event.pointerId) { canvas.releasePointerCapture(event.pointerId); plotDrag = null; canvas.classList.remove('panning'); } };
-    canvas.onpointercancel = () => { plotDrag = null; canvas.classList.remove('panning'); };
+    canvas.onpointerup = event => { if (plotDrag?.id === event.pointerId) { canvas.releasePointerCapture(event.pointerId); plotDrag = null; canvas.classList.remove('panning'); updatePlotHover(card, event); } };
+    canvas.onpointerleave = () => { if (!plotDrag) hidePlotHover(card); };
+    canvas.onpointercancel = () => { plotDrag = null; canvas.classList.remove('panning'); hidePlotHover(card); };
     canvas.addEventListener('wheel', event => {
       if (!state.lastTimestampNs) return;
       event.preventDefault();
@@ -1090,7 +1132,7 @@ function renderPlots() {
       const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left - 60) / Math.max(1, rect.width - 76)));
       zoomPlot(card, event.deltaY < 0 ? 1 / 1.25 : 1.25, fraction, true);
     }, { passive: false });
-    const legend = document.createElement('div'); legend.className = 'plot-legend'; legend.replaceChildren(...card.plotIds.slice(0, 24).map(id => { const item = document.createElement('span'); item.title = state.variableById.get(id)?.name || id; const color = document.createElement('i'); color.style.background = colors[(state.activeIndex.get(id) || 0) % colors.length]; item.append(color, document.createTextNode(item.title)); return item; }));
+    const legend = document.createElement('div'); legend.className = 'plot-legend'; legend.replaceChildren(...card.plotIds.slice(0, 24).map(id => { const item = document.createElement('span'); item.title = state.variableById.get(id)?.name || id; const color = document.createElement('i'); color.style.background = curveColor(id); item.append(color, document.createTextNode(item.title)); return item; }));
     if (card.plotIds.length > 24) legend.append(document.createTextNode(`… 本页另有 ${card.plotIds.length - 24} 路`));
     card.append(header, viewbar, body, legend); refreshPlotViewbar(card); return card;
   })); scheduleDraw(true);
@@ -1214,7 +1256,7 @@ function updateDebugButtons() {
 }
 function captureWatchConfig() {
   return {format:'pnx-watch',version:1,
-    variables:state.selected.map(id => ({expression:state.variableById.get(id)?.name,plotId:state.plotAssignments.get(id) || 'watch-only'})).filter(v=>v.expression),
+    variables:state.selected.map(id => ({expression:state.variableById.get(id)?.name,plotId:state.plotAssignments.get(id) || 'watch-only',...(state.variableColors.has(id)?{color:state.variableColors.get(id)}:{})})).filter(v=>v.expression),
     groups:state.plotGroups.map(g=>({...g})), plots:state.plots.map(p=>({...p,groupId:p.groupId || 'default',seconds:plotView(p.id).seconds})),
     activeGroup:state.activePlotGroup,columns:Number($('plotColumns').value),seconds:timeWindowSeconds($('plotTimeWindow').value),rate:Number($('scopeRate').value) || 1000};
 }
@@ -1227,14 +1269,14 @@ function restoreWatchConfig(config) {
   for(const variable of state.variables.filter(v=>!v.unavailable)) {
     if(byName.has(variable.name)) byName.set(variable.name,null); else byName.set(variable.name,variable);
   }
-  state.selected=[]; state.plotAssignments.clear();
+  state.selected=[]; state.plotAssignments.clear(); state.variableColors.clear();
   for(const entry of config.variables) {
     let variable=byName.get(entry.expression);
     if(!variable) {
       variable={id:'saved:'+entry.expression,name:entry.expression,unavailable:true,writable:false,writeReason:'当前 ELF 未找到唯一同名变量，保留配置等待重新连接'};
       state.variableById.set(variable.id,variable);
     }
-    state.selected.push(variable.id); state.plotAssignments.set(variable.id,entry.plotId);
+    state.selected.push(variable.id); state.plotAssignments.set(variable.id,entry.plotId); if(entry.color) state.variableColors.set(variable.id,entry.color);
   }
   displayVariables(); displaySelectedVariables(); renderPlots(); updateLive();
 }
@@ -1367,15 +1409,69 @@ function drawPlots() {
     const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, width, height);
     const frame = plotFrame(width, height, ratio);
     drawSeriesPlot(ctx, card, width, height, frame, ratio);
+    if (card.hoverX != null) renderPlotHover(card, card.hoverX, card.hoverY);
   }
 }
 function lowerBoundSeries(series, timestamp) { let lo = 0, hi = series.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (series[mid][0] < timestamp) lo = mid + 1; else hi = mid; } return lo; }
 function upperBoundSeries(series, timestamp) { let lo = 0, hi = series.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (series[mid][0] <= timestamp) lo = mid + 1; else hi = mid; } return lo; }
+function nearestSeriesPoint(series, timestamp) {
+  if (!series.length) return null;
+  const next = lowerBoundSeries(series, timestamp);
+  if (next <= 0) return series[0];
+  if (next >= series.length) return series.at(-1);
+  return timestamp - series[next - 1][0] <= series[next][0] - timestamp ? series[next - 1] : series[next];
+}
+function hidePlotHover(card) {
+  card.hoverX = null; card.hoverY = null;
+  for (const item of card.querySelectorAll('.plot-cursor,.plot-cursor-markers,.plot-tooltip')) item.classList.add('hidden');
+}
+function updatePlotHover(card, event) {
+  const canvas = card.querySelector('canvas'), rect = canvas.getBoundingClientRect();
+  card.hoverX = event.clientX - rect.left; card.hoverY = event.clientY - rect.top;
+  renderPlotHover(card, card.hoverX, card.hoverY);
+}
+function renderPlotHover(card, xCss, yCss) {
+  const geometry = card.plotGeometry, canvas = card.querySelector('canvas');
+  if (!geometry || !canvas) { hidePlotHover(card); return; }
+  const ratio = canvas.width / Math.max(1, canvas.getBoundingClientRect().width), x = xCss * ratio;
+  const { frame, axis, range, histories } = geometry;
+  if (x < frame.left || x > frame.left + frame.width || yCss * ratio < frame.top || yCss * ratio > frame.top + frame.height) { hidePlotHover(card); return; }
+  const timestamp = range.minT + (x - frame.left) / frame.width * (range.maxT - range.minT);
+  const samples = histories.map(([id, series]) => [id, nearestSeriesPoint(series, timestamp)]).filter(([, point]) => point && point[0] >= range.minT && point[0] <= range.maxT);
+  if (!samples.length) { hidePlotHover(card); return; }
+  const cursor = card.querySelector('.plot-cursor'), markerLayer = card.querySelector('.plot-cursor-markers'), tooltip = card.querySelector('.plot-tooltip');
+  const cursorLeft = frame.left / ratio + (timestamp - range.minT) / (range.maxT - range.minT || 1) * frame.width / ratio;
+  cursor.style.left = `${cursorLeft}px`; cursor.style.top = `${frame.top / ratio}px`; cursor.style.height = `${frame.height / ratio}px`; cursor.classList.remove('hidden');
+  markerLayer.replaceChildren(...samples.slice(0, 24).map(([id, point]) => {
+    const marker = document.createElement('i'); marker.style.background = curveColor(id); marker.style.borderColor = curveColor(id);
+    marker.style.left = `${frame.left / ratio + (point[0] - range.minT) / (range.maxT - range.minT || 1) * frame.width / ratio}px`;
+    marker.style.top = `${frame.top / ratio + (axis.max - point[1]) / (axis.max - axis.min || 1) * frame.height / ratio}px`;
+    return marker;
+  })); markerLayer.classList.remove('hidden');
+  const heading = document.createElement('div'); heading.className = 'plot-tooltip-time';
+  const relativeSeconds = (timestamp - range.firstT) / 1e9;
+  heading.textContent = `时间戳  +${relativeSeconds.toFixed(6)} s`;
+  const raw = document.createElement('small'); raw.textContent = `${Math.round(timestamp)} ns`;
+  const rows = samples.slice(0, 12).map(([id, point]) => {
+    const row = document.createElement('div'); row.className = 'plot-tooltip-row'; row.title = `采样时间戳 ${Math.round(point[0])} ns`;
+    const swatch = document.createElement('i'); swatch.style.background = curveColor(id);
+    const name = document.createElement('span'); name.textContent = state.variableById.get(id)?.name || id;
+    const value = document.createElement('strong'); value.textContent = Number(point[1]).toPrecision(8);
+    row.append(swatch, name, value); return row;
+  });
+  const more = samples.length > 12 ? document.createElement('div') : null;
+  if (more) { more.className = 'plot-tooltip-more'; more.textContent = `另有 ${samples.length - 12} 个变量`; }
+  tooltip.replaceChildren(heading, raw, ...rows, ...(more ? [more] : [])); tooltip.classList.remove('hidden');
+  const width = tooltip.offsetWidth, height = tooltip.offsetHeight, bodyWidth = canvas.getBoundingClientRect().width, bodyHeight = canvas.getBoundingClientRect().height;
+  tooltip.style.left = `${Math.max(6, Math.min(bodyWidth - width - 6, cursorLeft + (cursorLeft + width + 18 < bodyWidth ? 12 : -width - 12)))}px`;
+  tooltip.style.top = `${Math.max(6, Math.min(bodyHeight - height - 6, yCss - height / 2))}px`;
+}
 function drawSeriesPlot(ctx, card, width, height, frame, ratio) {
   const ids = card.plotIds || [];
   const range = plotRange(card);
   const histories = ids.map(id => [id, range.data.series.get(id) || []]).filter(([, series]) => series.length);
   if (!histories.length) {
+    if (ctx.canvas === card.querySelector('canvas')) { card.plotGeometry = null; hidePlotHover(card); }
     drawPlotGrid(ctx, frame, ratio, plotAxis(NaN, NaN), range);
     ctx.fillStyle = themeColor('#8491a2', '#657080'); ctx.font = `${12 * ratio}px Consolas, monospace`; ctx.textAlign = 'center';
     ctx.fillText(ids.length ? '等待实时数据' : '从左侧选择变量并分配到此曲线', width / 2, height / 2); ctx.textAlign = 'start'; return;
@@ -1391,16 +1487,18 @@ function drawSeriesPlot(ctx, card, width, height, frame, ratio) {
     }
   }
   if (!Number.isFinite(min)) {
+    if (ctx.canvas === card.querySelector('canvas')) { card.plotGeometry = null; hidePlotHover(card); }
     drawPlotGrid(ctx, frame, ratio, plotAxis(NaN, NaN), range);
     ctx.fillStyle = themeColor('#8491a2', '#657080'); ctx.font = `${12 * ratio}px Consolas, monospace`; ctx.textAlign = 'center';
     ctx.fillText('当前时间窗口内无该页样本', width / 2, height / 2); ctx.textAlign = 'start'; return;
   }
   const axis = plotAxis(min, max); min = axis.min; max = axis.max;
+  if (ctx.canvas === card.querySelector('canvas')) card.plotGeometry = {frame, axis, range, histories};
   drawPlotGrid(ctx, frame, ratio, axis, range);
   const gap = state.banks > 1 ? Math.max(150e6, state.bankDwellMs * 0.8e6) : Infinity;
   ctx.save(); ctx.beginPath(); ctx.rect(frame.left, frame.top, frame.width, frame.height); ctx.clip();
   for (const [id, series] of histories) {
-    ctx.strokeStyle = colors[(state.activeIndex.get(id) || 0) % colors.length]; ctx.lineWidth = 1.4 * ratio;
+    ctx.strokeStyle = curveColor(id); ctx.lineWidth = 1.4 * ratio;
     ctx.beginPath(); let previous = null, count = 0;
     const from = lowerBoundSeries(series, minT), to = upperBoundSeries(series, maxT);
     const step = Math.max(1, Math.floor((to - from) / Math.max(1, frame.width / ratio * 1.5)));
@@ -1442,7 +1540,7 @@ async function exportPlot(card) {
     const width = Math.min(350, ctx.measureText(name).width + 33);
     if (x + width > 1550) { x = 42; y += 30; }
     if (y > 875) break;
-    ctx.fillStyle = colors[(state.activeIndex.get(id) || 0) % colors.length]; ctx.fillRect(x, y - 12, 11, 11);
+    ctx.fillStyle = curveColor(id); ctx.fillRect(x, y - 12, 11, 11);
     ctx.fillStyle = themeColor('#c5cad5', '#394655'); ctx.fillText(name, x + 19, y); x += width + 18;
   }
   const blob = await new Promise(resolve => output.toBlob(resolve, 'image/png'));
@@ -1455,7 +1553,7 @@ async function exportPlot(card) {
 async function init() {
   try { const savedView = localStorage.getItem('pnx-active-view'); setView(savedView === 'tools' ? 'config' : savedView || 'editor'); } catch { setView('editor'); }
   try { const width = Number(localStorage.getItem('pnx-scope-sidebar-width')); if (Number.isFinite(width) && width > 0) setScopeSidebarWidth(width); } catch { /* Storage can be disabled. */ }
-  try { const layout = JSON.parse(localStorage.getItem('pnx-plots') || 'null'); if (Array.isArray(layout?.plots) && layout.plots.length && layout.plots.length <= 32) { const plots = layout.plots.filter(plot => typeof plot.id === 'string' && typeof plot.name === 'string'); if (plots.length) { state.plots = plots; if (Array.isArray(layout.groups) && layout.groups.length) { state.plotGroups = layout.groups.filter(group => typeof group.id === 'string' && typeof group.name === 'string'); if (!state.plotGroups.length) state.plotGroups = [{id:'default',name:'默认组'}]; } state.activePlotGroup = state.plotGroups.some(group => group.id === layout.activeGroup) ? layout.activeGroup : state.plotGroups[0].id; for (const plot of plots) if (!state.plotGroups.some(group => group.id === (plot.groupId || 'default'))) plot.groupId = state.activePlotGroup; state.plotAssignments = new Map(Array.isArray(layout.assignments) ? layout.assignments : []); $('plotColumns').value = String(layout.columns || '2'); $('plotTimeWindow').value = String(timeWindowSeconds(layout.seconds)); if (Array.isArray(layout.windows)) for (const [id, seconds] of layout.windows) if (plots.some(plot => plot.id === id)) state.plotViews.set(id, { seconds: timeWindowSeconds(seconds), paused: false, anchorNs: null, snapshot: null }); nextPlotId = Math.max(2, ...state.plots.map(plot => Number(plot.id.replace('plot-', '')) + 1 || 2)); } } } catch { /* Ignore stale layout. */ }
+  try { const layout = JSON.parse(localStorage.getItem('pnx-plots') || 'null'); if (Array.isArray(layout?.plots) && layout.plots.length && layout.plots.length <= 32) { const plots = layout.plots.filter(plot => typeof plot.id === 'string' && typeof plot.name === 'string'); if (plots.length) { state.plots = plots; if (Array.isArray(layout.groups) && layout.groups.length) { state.plotGroups = layout.groups.filter(group => typeof group.id === 'string' && typeof group.name === 'string'); if (!state.plotGroups.length) state.plotGroups = [{id:'default',name:'默认组'}]; } state.activePlotGroup = state.plotGroups.some(group => group.id === layout.activeGroup) ? layout.activeGroup : state.plotGroups[0].id; for (const plot of plots) if (!state.plotGroups.some(group => group.id === (plot.groupId || 'default'))) plot.groupId = state.activePlotGroup; state.plotAssignments = new Map(Array.isArray(layout.assignments) ? layout.assignments : []); state.variableColors = new Map((Array.isArray(layout.colors) ? layout.colors : []).filter(entry => Array.isArray(entry) && /^#[0-9a-f]{6}$/i.test(entry[1] || ''))); $('plotColumns').value = String(layout.columns || '2'); $('plotTimeWindow').value = String(timeWindowSeconds(layout.seconds)); if (Array.isArray(layout.windows)) for (const [id, seconds] of layout.windows) if (plots.some(plot => plot.id === id)) state.plotViews.set(id, { seconds: timeWindowSeconds(seconds), paused: false, anchorNs: null, snapshot: null }); nextPlotId = Math.max(2, ...state.plots.map(plot => Number(plot.id.replace('plot-', '')) + 1 || 2)); } } } catch { /* Ignore stale layout. */ }
   updateConnection(); updateDebugButtons(); updateLive(); renderPlots();
   const info = await api('/api/boards'); state.boards = info.boards;
   $('board').replaceChildren(...Object.keys(info.boards).map(value => option(value)));
@@ -1680,7 +1778,7 @@ async function disconnect() {
 function resetConnectionUI(preserveWatch = true) {
   if ($('writeDialog').open) $('writeDialog').close();
   variableToWrite = undefined;
-  if (!preserveWatch) { state.selected=[]; setVariableCatalog([],[]); state.expandedVariables.clear(); state.plotAssignments.clear(); state.plotGroups=[{id:'default',name:'默认组'}]; state.activePlotGroup='default'; state.plots=[{id:'plot-1',name:'曲线 1',groupId:'default'}]; }
+  if (!preserveWatch) { state.selected=[]; setVariableCatalog([],[]); state.expandedVariables.clear(); state.plotAssignments.clear(); state.variableColors.clear(); state.plotGroups=[{id:'default',name:'默认组'}]; state.activePlotGroup='default'; state.plots=[{id:'plot-1',name:'曲线 1',groupId:'default'}]; }
   clearTimeout(liveTimer); liveTimer = null;
   state.connected = false; state.flashAccess = false; state.debugAccess = false; state.debugPaused = false; state.debugReason = ''; state.stoppedAt = null; stopRevision++; state.activeIds = []; state.activeIndex.clear(); state.latest = []; state.points = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = 1; state.bankSize = BANK_CHANNELS; state.bankDwellMs = 0; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = 0; state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); state.recording = false; updateScopeNotice();
   if ($('variablePicker').open) $('variablePicker').close();
@@ -1746,6 +1844,7 @@ $('removePlotGroup').onclick = async () => {
   renderPlots(); displaySelectedVariables(); displayVariables(); savePlotLayout();
 };
 $('addPlot').onclick = () => { const id = `plot-${nextPlotId++}`; state.plots.push({ id, name: `曲线 ${state.plots.length + 1}`, groupId: state.activePlotGroup }); renderPlots(); displayVariables(); displaySelectedVariables(); savePlotLayout(); };
+$('configurePlot').onclick = () => openOscilloscopeSettings(state.plots.find(plot => (plot.groupId || 'default') === state.activePlotGroup));
 $('plotTimeWindow').onchange = () => {
   const seconds = timeWindowSeconds($('plotTimeWindow').value); $('plotTimeWindow').value = String(seconds);
   for (const card of $('plotGrid').children) { const view = plotView(card.dataset.plotId); view.seconds = seconds; if (view.paused) view.anchorNs = clampPlotAnchor(card, view.anchorNs); refreshPlotViewbar(card); }

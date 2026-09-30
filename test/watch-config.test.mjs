@@ -27,4 +27,15 @@ test('watch files reject unsupported versions, missing plot references and dupli
   assert.throws(()=>validateWatchConfig({...config(),variables:[config().variables[0],config().variables[0]]}));
   assert.throws(()=>validateWatchConfig({...config(),plots:[]}));
   assert.throws(()=>validateWatchConfig({...config(),rate:Infinity}));
+  assert.throws(()=>validateWatchConfig({...config(),variables:[{expression:'yaw',plotId:'plot-1',color:'red'}]}));
+});
+test('watch files preserve normalized custom curve colors', () => {
+  const root=mkdtempSync(path.join(os.tmpdir(),'pnx-watch-color-'));
+  try {
+    const input=config(); input.variables[0].color='#A1B2C3';
+    const expected={color:'#a1b2c3',expression:'robot.yaw',plotId:'plot-1'};
+    assert.deepEqual(validateWatchConfig(input).variables[0],expected);
+    saveWatchConfig(new Workspace(root),input);
+    assert.deepEqual(loadWatchConfig(new Workspace(root)).variables[0],expected);
+  } finally { rmSync(root,{recursive:true,force:true}); }
 });

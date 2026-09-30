@@ -20,8 +20,9 @@ export function validateWatchConfig(value) {
   const plotIds = new Set(plots.map(p => p.id));
   if (plotIds.size !== plots.length || !groupIds.has(value.activeGroup) || ![1,2,3].includes(value.columns) || !Number.isFinite(value.seconds) || value.seconds < .1 || value.seconds > 120 || !Number.isFinite(value.rate) || value.rate < 1 || value.rate > 100000) fail();
   const variables = value.variables.map(v => {
-    if (!text(v.expression) || (v.plotId !== 'watch-only' && !plotIds.has(v.plotId))) fail();
-    return {expression:v.expression,plotId:v.plotId};
+    if (!text(v.expression) || (v.plotId !== 'watch-only' && !plotIds.has(v.plotId)) ||
+        (v.color !== undefined && (typeof v.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(v.color)))) fail();
+    return {...(v.color === undefined ? {} : {color:v.color.toLowerCase()}),expression:v.expression,plotId:v.plotId};
   });
   if (new Set(variables.map(v => v.expression)).size !== variables.length) fail();
   return {format:'pnx-watch',version:1,groups,plots,variables,activeGroup:value.activeGroup,columns:value.columns,seconds:value.seconds,rate:value.rate};

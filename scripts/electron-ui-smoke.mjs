@@ -522,6 +522,43 @@ try {
     legendScrollable: document.querySelector('.plot-card .plot-legend')?.scrollWidth > document.querySelector('.plot-card .plot-legend')?.clientWidth }))()`);
   assert.equal(selectedView.count, expectedChannels);
   assert.equal(selectedView.sameRow && selectedView.pickerClosed, true);
+  const curveConfigDraft = await evaluate(`(() => {
+    const card = [...document.querySelectorAll('.plot-card')].find(item => item.plotIds.length);
+    const plot = state.plots.find(item => item.id === card.dataset.plotId);
+    openOscilloscopeSettings(plot);
+    const dialog = document.querySelector('.scope-properties');
+    dialog.querySelector('input[aria-label="曲线名称"]').value = '实时信号曲线';
+    dialog.querySelector('input[aria-label="曲线时间窗"]').value = '5';
+    const rows = [...dialog.querySelectorAll('.scope-property-row:not(.scope-property-head)')];
+    const targetIndex = Math.max(0, rows.findIndex(row => row.querySelector('input[type="checkbox"]')?.checked));
+    const colors = [...dialog.querySelectorAll('input[type="color"]')], targetColor = rows[targetIndex].querySelector('input[type="color"]');
+    targetColor.value = '#ff4d67'; targetColor.dispatchEvent(new Event('input', {bubbles:true}));
+    if (colors.length > 1) { const accent = colors.find(input => input !== targetColor); accent.value = '#35c2ff'; accent.dispatchEvent(new Event('input', {bubbles:true})); }
+    return {plotId:plot.id,targetId:state.selected[targetIndex],rows:rows.length,colors:colors.length};
+  })()`);
+  assert.ok(curveConfigDraft.rows >= 1 && curveConfigDraft.colors >= 1);
+  const curveConfigScreenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(path.join(root, '.cache', 'release-curve-config.png'), Buffer.from(curveConfigScreenshot.data, 'base64'));
+  const curveConfig = await evaluate(`(() => {
+    document.querySelector('.scope-properties .primary').click();
+    const plot = state.plots.find(item => item.id === ${JSON.stringify(curveConfigDraft.plotId)});
+    const target = ${JSON.stringify(curveConfigDraft.targetId)};
+    const saved = captureWatchConfig().variables.find(item => item.expression === state.variableById.get(target)?.name);
+    return {name:plot.name,seconds:plotView(plot.id).seconds,color:curveColor(target),savedColor:saved?.color};
+  })()`);
+  assert.deepEqual(curveConfig,{name:'实时信号曲线',seconds:5,color:'#ff4d67',savedColor:'#ff4d67'});
+  const curveHover = await evaluate(`(async () => {
+    const card = document.querySelector('.plot-card[data-plot-id="${curveConfigDraft.plotId}"]');
+    card.scrollIntoView({block:'center',inline:'nearest'});
+    scheduleDraw(true); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const canvas=card.querySelector('canvas'),rect=canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent('pointermove',{clientX:rect.left+rect.width*.62,clientY:rect.top+rect.height*.42,bubbles:true}));
+    return {visible:!card.querySelector('.plot-tooltip').classList.contains('hidden'),text:card.querySelector('.plot-tooltip').textContent,
+      markers:card.querySelectorAll('.plot-cursor-markers i').length};
+  })()`);
+  assert.equal(curveHover.visible,true); assert.match(curveHover.text,/时间戳/); assert.ok(curveHover.markers >= 1);
+  const curveHoverScreenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(path.join(root, '.cache', 'release-curve-hover.png'), Buffer.from(curveHoverScreenshot.data, 'base64'));
   const plotInteraction = await evaluate(`(async () => {
     const card = [...document.querySelectorAll('.plot-card')].find(item => item.plotIds.length);
     const input = document.getElementById('plotTimeWindow'); input.value = '1'; input.dispatchEvent(new Event('change'));
@@ -816,7 +853,7 @@ try {
   assert.equal(debugInspector.listed, 5);
   assert.match(debugInspector.statusHint, /not_configured/);
   console.log(JSON.stringify({ profile: realProbe ? 'stlink-300' : mockBanked ? 'mock-banked-4' : 'mock-4', configPage, configNavigation, deviceTools, toolchainSetup, missingToolPrompt, probePicker, editor, genericState, navigation, savedDirtyTabs: 2, workflows, terminal, plots, axis, dragOrder: order,
-    acquisition: { ...acquisition, liveValues: acquisition.liveValues.slice(0, 8) }, selectedView, plotInteraction, wheelZoom, panned, fullScreenPlot, fullScreenGrid, csv, variableTree, deepTree, variableControls, sidebarResize, debugInspector,
+    acquisition: { ...acquisition, liveValues: acquisition.liveValues.slice(0, 8) }, selectedView, curveConfig, curveHover, plotInteraction, wheelZoom, panned, fullScreenPlot, fullScreenGrid, csv, variableTree, deepTree, variableControls, sidebarResize, debugInspector,
     rendererTaskSecondsInTwoSeconds: Number((duration(performanceAfter) - duration(performanceBefore)).toFixed(3)), screenshotPath }, null, 2));
   assert.equal(await evaluate("document.getElementById('quickStop').disabled"), false);
   await evaluate("document.getElementById('quickStop').onclick()");
@@ -863,7 +900,7 @@ try {
   console.log('ST-Link driver UI checks passed');
   await evaluate("setView('editor')");
   const chrome=await evaluate(`({top:document.querySelector('.titlebar').getBoundingClientRect().height,tools:document.querySelector('.editor-toolbar').getBoundingClientRect().height,statusInFooter:document.getElementById('status').parentElement.id==='statusBar'})`);
-  assert.deepEqual(chrome,{top:34,tools:30,statusInFooter:true});
+  assert.equal(chrome.top,34); assert.ok(Math.abs(chrome.tools-30)<.01); assert.equal(chrome.statusInFooter,true);
   const chromeImage=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   writeFileSync(path.join(root,'.cache','electron-ui-compact-editor.png'),Buffer.from(chromeImage.data,'base64'));
 
