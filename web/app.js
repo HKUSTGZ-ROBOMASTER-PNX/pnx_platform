@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const token = window.PNX_TOKEN;
-const colors = ['#5ee1a8','#ffbd69','#6db6ff','#ff7397','#bb9aff','#f0e07b','#6de1e9','#f890e7'];
+const colors = ['#e34c4c','#27b85a','#258fc5','#c8892d','#a67bd5','#159f9f','#db729d','#9eaf39'];
 const BANK_CHANNELS = 256;
 const PLOT_PAGE_SIZE = 64;
 const state = { board: 'h723_mc02', preset: 'h723-debug', config: {}, hardware: {}, variables: [], selected: [], activeIds: [], activeIndex: new Map(), points: [], latest: [], series: new Map(), latestById: new Map(), latestAtById: new Map(), firstTimestampNs: null, lastTimestampNs: 0, banks: 1, bankSize: BANK_CHANNELS, bankDwellMs: 0, streamEpoch: null, sampleCount: 0, droppedFrames: 0, rateWindow: [], lastSampleAt: 0, connected: false, flashAccess: false,
@@ -1076,6 +1076,8 @@ function renderPlots() {
     let plotDrag = null;
     canvas.onpointerdown = event => { if (event.button !== 0 || !state.lastTimestampNs) return; plotDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, anchor: plotView(plot.id).anchorNs ?? plotData(plot.id).lastTimestampNs, moved: false }; canvas.setPointerCapture(event.pointerId); };
     canvas.onpointermove = event => {
+      card.plotCursorX = event.clientX - canvas.getBoundingClientRect().left;
+      scheduleDraw();
       if (!plotDrag || plotDrag.id !== event.pointerId) return;
       if (!plotDrag.moved && Math.hypot(event.clientX - plotDrag.x, event.clientY - plotDrag.y) < 4) return;
       plotDrag.moved = true; canvas.classList.add('panning');
@@ -1083,6 +1085,7 @@ function renderPlots() {
     };
     canvas.onpointerup = event => { if (plotDrag?.id === event.pointerId) { canvas.releasePointerCapture(event.pointerId); plotDrag = null; canvas.classList.remove('panning'); } };
     canvas.onpointercancel = () => { plotDrag = null; canvas.classList.remove('panning'); };
+    canvas.onpointerleave = () => { card.plotCursorX = null; scheduleDraw(); };
     canvas.addEventListener('wheel', event => {
       if (!state.lastTimestampNs) return;
       event.preventDefault();
@@ -1366,12 +1369,12 @@ function drawPlots() {
     if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
     const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, width, height);
     const frame = plotFrame(width, height, ratio);
-    drawSeriesPlot(ctx, card, width, height, frame, ratio);
+    drawSeriesPlot(ctx, card, width, height, frame, ratio, true);
   }
 }
 function lowerBoundSeries(series, timestamp) { let lo = 0, hi = series.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (series[mid][0] < timestamp) lo = mid + 1; else hi = mid; } return lo; }
 function upperBoundSeries(series, timestamp) { let lo = 0, hi = series.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (series[mid][0] <= timestamp) lo = mid + 1; else hi = mid; } return lo; }
-function drawSeriesPlot(ctx, card, width, height, frame, ratio) {
+function drawSeriesPlot(ctx, card, width, height, frame, ratio, showCursor = false) {
   const ids = card.plotIds || [];
   const range = plotRange(card);
   const histories = ids.map(id => [id, range.data.series.get(id) || []]).filter(([, series]) => series.length);
@@ -1400,25 +1403,37 @@ function drawSeriesPlot(ctx, card, width, height, frame, ratio) {
   const gap = state.banks > 1 ? Math.max(150e6, state.bankDwellMs * 0.8e6) : Infinity;
   ctx.save(); ctx.beginPath(); ctx.rect(frame.left, frame.top, frame.width, frame.height); ctx.clip();
   for (const [id, series] of histories) {
-    ctx.strokeStyle = colors[(state.activeIndex.get(id) || 0) % colors.length]; ctx.lineWidth = 1.4 * ratio;
-    ctx.beginPath(); let previous = null, count = 0;
+    ctx.strokeStyle = colors[(state.activeIndex.get(id) || 0) % colors.length]; ctx.lineWidth = ratio;
+    ctx.lineJoin = 'round'; ctx.beginPath(); let previous = null, count = 0;
     const from = lowerBoundSeries(series, minT), to = upperBoundSeries(series, maxT);
-    const step = Math.max(1, Math.floor((to - from) / Math.max(1, frame.width / ratio * 1.5)));
-    for (let position = from; position < to; position += step) {
+    const xOf = timestamp => frame.left + (timestamp - minT) / (maxT - minT || 1) * frame.width;
+    const yOf = value => frame.top + (max - value) / (max - min) * frame.height;
+    const append = position => {
       const [timestamp, value] = series[position];
-      const x = frame.left + (timestamp - minT) / (maxT - minT || 1) * frame.width;
-      const y = frame.top + (max - value) / (max - min) * frame.height;
+      const x = xOf(timestamp), y = yOf(value);
       if (previous === null || timestamp - previous > gap) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
       previous = timestamp; count++;
+    };
+    // Keep each pixel column's first, last, low and high samples in time order.
+    // Fixed-stride thinning aliases fast waveforms and can erase narrow peaks.
+    let bucket = -1, first = -1, low = -1, high = -1, last = -1;
+    const flush = () => {
+      if (first < 0) return;
+      for (const position of [...new Set([first, low, high, last])].sort((a, b) => a - b)) append(position);
+    };
+    for (let position = from; position < to; position++) {
+      const column = Math.floor(xOf(series[position][0]) / ratio);
+      if (column !== bucket || (last >= 0 && series[position][0] - series[last][0] > gap)) {
+        flush(); bucket = column; first = low = high = last = position;
+        if (position > from && series[position][0] - series[position - 1][0] > gap) previous = null;
+      } else {
+        if (series[position][1] < series[low][1]) low = position;
+        if (series[position][1] > series[high][1]) high = position;
+        last = position;
+      }
     }
-    if (to > from && (to - 1 - from) % step !== 0) {
-      const [timestamp, value] = series[to - 1];
-      const x = frame.left + (timestamp - minT) / (maxT - minT || 1) * frame.width;
-      const y = frame.top + (max - value) / (max - min) * frame.height;
-      if (previous === null || timestamp - previous > gap) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      previous = timestamp; count++;
-    }
+    flush();
     if (count === 1 && previous !== null) {
       const [timestamp, value] = series[Math.min(series.length - 1, to - 1)];
       ctx.fillStyle = ctx.strokeStyle;
@@ -1427,6 +1442,31 @@ function drawSeriesPlot(ctx, card, width, height, frame, ratio) {
     ctx.stroke();
   }
   ctx.restore();
+  if (showCursor && Number.isFinite(card.plotCursorX)) {
+    const x = Math.max(frame.left, Math.min(frame.left + frame.width, card.plotCursorX * ratio));
+    const timestamp = minT + (x - frame.left) / frame.width * (maxT - minT);
+    ctx.save(); ctx.strokeStyle = themeColor('#929ba9', '#8f98a4'); ctx.lineWidth = ratio;
+    ctx.setLineDash([3 * ratio, 3 * ratio]); ctx.beginPath(); ctx.moveTo(x, frame.top); ctx.lineTo(x, frame.top + frame.height); ctx.stroke(); ctx.setLineDash([]);
+    const values = histories.slice(0, 6).map(([id, series]) => {
+      const index = lowerBoundSeries(series, timestamp);
+      const nearest = index >= series.length ? index - 1 : index > 0 && timestamp - series[index - 1][0] < series[index][0] - timestamp ? index - 1 : index;
+      return { id, point: series[nearest] };
+    }).filter(({point}) => point && point[0] >= minT && point[0] <= maxT);
+    const lineHeight = 16 * ratio, boxWidth = Math.min(frame.width, 220 * ratio), boxHeight = (values.length + 1) * lineHeight + 10 * ratio;
+    const preferredX = x + boxWidth + 12 * ratio > frame.left + frame.width ? x - boxWidth - 10 * ratio : x + 10 * ratio;
+    const boxX = Math.max(frame.left, Math.min(frame.left + frame.width - boxWidth, preferredX));
+    const boxY = frame.top + 7 * ratio;
+    ctx.fillStyle = themeColor('rgba(26,29,34,.94)', 'rgba(255,255,255,.96)'); ctx.strokeStyle = themeColor('#515b68', '#aab4bf');
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight); ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+    ctx.font = `${10 * ratio}px Consolas, monospace`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.fillStyle = themeColor('#cbd4df', '#354354'); ctx.fillText(`${((timestamp - range.firstT) / 1e9).toFixed(3)} s`, boxX + 8 * ratio, boxY + 11 * ratio);
+    values.forEach(({id, point}, index) => {
+      ctx.fillStyle = colors[(state.activeIndex.get(id) || 0) % colors.length];
+      const name = state.variableById.get(id)?.name || id;
+      ctx.fillText(`${name.slice(0, 17)}  ${Number(point[1]).toPrecision(7)}`, boxX + 8 * ratio, boxY + (index + 1) * lineHeight + 11 * ratio, boxWidth - 14 * ratio);
+    });
+    ctx.restore();
+  }
 }
 async function exportPlot(card) {
   const plot = state.plots.find(item => item.id === card.dataset.plotId);
@@ -1661,7 +1701,7 @@ async function flashCurrent() {
   clearTimeout(autoSampleTimer);
   try {
   if (!(await confirmAction(`烧录 ${state.projectProfile?.target.elf || state.preset} 的 ELF，随后复位目标板？`))) return;
-  const motorDemo = state.config.params?.value?.test?.auto_run_on_boot && state.config.params?.value?.test?.motor_demo;
+  const motorDemo = state.preset?.endsWith('-diagnose') && state.config.params?.value?.test?.auto_run_on_boot && state.config.params?.value?.test?.motor_demo;
   if (motorDemo && !(await confirmAction('当前配置启用了 motor_demo，复位后可能驱动电机。确认继续？'))) return;
   if (buildBeforeConnect()) await buildCurrent();
   activateTerminal('flash');
@@ -1756,7 +1796,7 @@ $('recordStart').onclick = () => perform(async () => { applyRecordStatus(await a
 $('recordStop').onclick = () => perform(async () => { applyRecordStatus(await api('/api/record/stop', {})); log(`CSV 已保存：${state.recordFile}（${state.recordRows} 行）`); });
 $('exportCsv').onclick = () => { if (!state.recordFile) return; const link = document.createElement('a'); link.href = `/api/record/csv?token=${encodeURIComponent(token)}`; link.download = state.recordFile.split(/[\\/]/).at(-1); document.body.append(link); link.click(); link.remove(); };
 $('plotColumns').onchange = () => { renderPlots(); savePlotLayout(); };
-$('serialTest').onclick = () => perform(async () => { activateTerminal('diagnostics'); await api('/api/serial-test', { port: $('serialPort').value, baud: Number($('baud').value) }); log('串口诊断已完成', 'diagnostics'); });
+$('serialTest').onclick = () => perform(async () => { activateTerminal('diagnostics'); await api('/api/serial-test', { protocol: $('serialProtocol').value, port: $('serialPort').value, baud: Number($('baud').value) }); log('串口诊断已完成', 'diagnostics'); });
 const darkCurveColors = [...colors];
 function themeColor(dark, light) { return document.documentElement.dataset.theme === 'light' ? light : dark; }
 function syncConfigTheme() {

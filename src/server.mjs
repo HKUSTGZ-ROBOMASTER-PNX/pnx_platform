@@ -153,10 +153,11 @@ async function configEditorState(board, role, preset, refresh = false) {
   const errors = {};
   if (data) for (const field of definitions) {
     const value = get(data, field.path);
+    if (role === 'params' && field.path[0] === 'test' && !preset?.endsWith('-diagnose')) continue;
     if (value === undefined || (role === 'params' && !parameterActive(field.path, data, configs.robot.value))) continue;
     try { validate(field, value, hardware); } catch (err) { errors[field.path.join('.')] = err.message; }
   }
-  if (role === 'params') Object.assign(errors, testRequirements(data, configs.robot.value));
+  if (role === 'params' && preset?.endsWith('-diagnose')) Object.assign(errors, testRequirements(data, configs.robot.value));
   if (role === 'robot' && Array.isArray(data?.devices?.motors?.list)) data.devices.motors.list.forEach((motor, index) => {
     for (const field of motorFields) {
       const value = motor[field.path[0]];
@@ -554,7 +555,7 @@ async function route(req, res) {
       configureResults.set(`${workspace.root}|${input.preset}`, { status: '编译成功', last: `${input.preset}: Configure + Build 成功` });
     } catch (err) { configureResults.set(`${workspace.root}|${input.preset}`, { status: '编译失败', last: `${input.preset}: ${err.message}` }); throw err; }
     const detected = detectProjectTarget(workspace.root, true, buildDir);
-    json(res, 200, { ok: true, buildDir, elf: projectRoot ? path.join(buildDir, 'pnx_embedded.elf') : detected.elf || undefined }); return;
+    json(res, 200, { ok: true, buildDir, elf: projectRoot ? resolveTarget(workspace.root, projectProfile(), input.preset, buildDirectory).elf : detected.elf || undefined }); return;
   }
   if (url.pathname === '/api/connect' && req.method === 'POST') {
     json(res, 200, await serializeSession(() => connectSession(input))); return;
@@ -629,7 +630,7 @@ async function route(req, res) {
     if (input.preset !== session.meta.preset) throw new Error('Selected preset differs from active probe session; reconnect first');
     const board = session.meta.board;
     const cfg = projectRoot && board ? currentConfig(board).params.value : {};
-    if (cfg.test?.auto_run_on_boot && cfg.test?.motor_demo && input.ackMotorMotion !== true) throw new Error('Motor demo is enabled; acknowledge movement before flashing');
+    if (input.preset?.endsWith('-diagnose') && cfg.test?.auto_run_on_boot && cfg.test?.motor_demo && input.ackMotorMotion !== true) throw new Error('Motor demo is enabled; acknowledge movement before flashing');
     const elf = session.meta.elfPath;
     if (!existsSync(elf)) throw new Error('Build the selected preset first');
     if (hashFile(elf) !== session.meta.elfHash || (projectRoot && board && (currentConfig(board).params.hash !== session.meta.paramsHash || currentConfig(board).robot.hash !== session.meta.robotHash)))
@@ -644,7 +645,9 @@ async function route(req, res) {
     if (!/^COM\d{1,3}$/i.test(input.port || '')) throw new Error('Enter a COM port such as COM7');
     const baud = Number(input.baud);
     if (!Number.isInteger(baud) || baud < 1200 || baud > 3000000) throw new Error('Invalid baud rate');
-    await command(BACKEND, ['--serial-test', '--port', input.port.toUpperCase(), '--baud', String(baud)], ROOT, 'diagnostics');
+    const protocol = input.protocol || 'usart';
+    if (!['usart', 'usb'].includes(protocol)) throw new Error('Invalid diagnostic protocol');
+    await command(BACKEND, ['--serial-test', '--port', input.port.toUpperCase(), '--baud', String(baud), '--protocol', protocol], ROOT, 'diagnostics');
     json(res, 200, { ok: true }); return;
   }
   json(res, 404, { error: 'Not found' });

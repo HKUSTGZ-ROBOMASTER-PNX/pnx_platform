@@ -11,7 +11,14 @@ Windows 用户运行 `PnX-Platform-Setup-windows-x64.exe` 选择安装目录，�
 ### Linux 与 macOS
 
 - Linux x64：解压 `PnX-Platform-linux-x64.tar.gz`，进入目录运行 `./"PnX Platform"`。构建基线为 Ubuntu 22.04，需桌面环境与 GTK3、NSS、ALSA、GBM 系统库。
-- macOS：按 CPU 选择 `PnX-Platform-macOS-arm64.dmg`（Apple Silicon）或 `PnX-Platform-macOS-x64.dmg`（Intel），打开后将应用拖到 Applications。当前为本地临时签名，尚无 Apple Developer ID 签名和公证；系统可能要求在“隐私与安全性”中确认打开。
+- macOS：按 CPU 选择 `PnX-Platform-macOS-arm64.dmg`（Apple Silicon）或 `PnX-Platform-macOS-x64.dmg`（Intel），打开后将应用拖到 Applications。当前为本地临时签名，尚无 Apple Developer ID 签名和公证。从浏览器下载后，macOS 可能提示“PnX Platform.app 已损坏，无法打开”；这不表示磁盘映像本身损坏。先用发布页的 `SHA256SUMS-darwin-<架构>.txt` 核对 DMG 的 SHA-256。确认文件来自本项目的 GitHub Release 且校验一致后，可在终端只移除此应用的下载隔离标记，再打开应用：
+
+  ```sh
+  xattr -dr com.apple.quarantine "/Applications/PnX Platform.app"
+  open "/Applications/PnX Platform.app"
+  ```
+
+  如果应用尚未复制到 Applications，先从 DMG 中拖过去。此步骤只针对当前应用，不修改系统的全局安全设置；正式消除此提示需要使用 Apple Developer ID 签名并公证发布包。
 - 每个包都内置对应系统和架构的 Rust 后端，运行无需其它工程、Node.js 或 Rust。固件编译仍需本机的 CMake、Ninja 和 Arm 工具链。macOS 桌面启动支持 Homebrew 默认路径。
 - Linux 普通桌面用户连接探针前，可在解压目录执行以下操作，然后拔插探针。规则仅覆盖 ST-Link 与产品名称含 CMSIS-DAP 的设备；其它探针参考 [probe-rs 权限配置](https://probe.rs/docs/getting-started/probe-setup/)。串口还需拥有对应设备的访问权限。
 
@@ -33,7 +40,7 @@ Linux/macOS 的真实硬件烧录、调试和采样性能尚待各平台实板�
 - 命中断点或单步暂停时，编辑器显示当前 PC、源码行和黄色执行箭头；调试工具栏提供暂停、继续和单步按钮。调试区可批量读取 `can_diag_bus` 总线状态，或查看带类型的全局状态字段，并对当前 PnX 的 `types::status` 数值给出名称。局部函数返回值尚未纳入快照；无法匹配工程源码时仍显示 PC。
 - 实时曲线支持搜索添加全局变量、多 Plot 排布、缩放、暂停、拖动回看、PNG 导出和 CSV 连续记录。超过 256 路变量时自动轮换采集，单路刷新率会随组数下降。图表最多以 30 FPS 绘制，界面显示实际采样速率。
 - 图形配置支持应用参数、Robot 电机、资源绑定和硬件概览；保存前检查磁盘版本，最终配置仍以 CMake 校验为准。
-- USART 请求/响应诊断由内置 Rust 后端执行，不需要 Python 或工程中的诊断脚本；需要串口适配器和匹配的板端固件。CAN 诊断变量可从 ELF 变量目录中搜索添加。
+- USART 与 USB CDC 请求/响应诊断由内置 Rust 后端执行，不需要 Python 或工程中的诊断脚本；需要对应串口和匹配的板端诊断固件。CAN 诊断变量可从 ELF 变量目录中搜索添加。
 
 固件编译需要系统安装 CMake 3.24+、Ninja 和 Arm GNU Toolchain。可在“设置与构建 → 设备工具 → 配置与构建”检测本机工具并配置路径。运行工作台、模拟采样和串口诊断不需要这些编译工具。
 
@@ -96,6 +103,8 @@ node scripts/electron-ui-smoke.mjs <PnX-Platform.exe 路径>
 v1.0.0 使用编译时插件注册表 `src/plugins/registry.mjs`。插件导出 `manifest`（唯一 id、名称、API 版本、能力）、`detect(root)` 与可选的 `resolveProjectTarget(root, preset, buildDirectory)`。新增工程适配器后在注册表加入模块，重新打包即可随应用分发，并在“目标与插件”中按工程启停。探针连接、采集与调试生命周期始终由核心管理。
 
 PnX 后端模块和 Schema 位于 `src/plugins/pnx/`，配置页面及诊断视图位于 `web/plugins/pnx/`，旧顶层副本已移除。项目设置保存在应用数据目录的 projects 缓存中，不向固件工程注入源码。关闭 PnX 插件后其配置 API 不可操作，但通用目标、采样和调试仍可使用。
+
+PnX 工程的普通 preset 生成 `pnx_embedded.elf`，`h723-diagnose` / `f407-diagnose` 生成独立的 `pnx_diagnose.elf`。两者成功链接后均生成 `pnx-artifact.json`；插件连接前校验板型、固件类型、配置输入与 ELF 哈希。CAN 面板根据两次只读快照的真实主机时间间隔估算速率；板端保存累计值和峰值，快照仍是 best-effort。主动诊断需显式选用诊断固件，平台连接不会自行启动测试。
 
 这一版支持随平台编译的工程适配插件；尚未提供任意第三方插件包的运行时安装、隔离进程 SDK 或 MCU 实验固件插件。既有 ELF 调试仍要求后端支持芯片，并且 ELF 与目标程序匹配；普通工程已使用 wbr_2026 与 Horco CMSIS-DAP 做 12 路、5 秒只读采集验证（约 978 S/s，0 丢帧）；其它目标及调试控制仍需分别验证。
 

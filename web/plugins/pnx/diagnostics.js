@@ -1,4 +1,6 @@
-const canFields = ['state_bo','state_ep','state_ew','tec','rec','lec','cel_total','ack_total','rx_frames_total','tx_attempts_total','rx_overrun_total','busoff_total','fifo0_fill','fifo1_fill','rx_rate_avg','tx_rate_avg'];
+const canFields = ['state_bo','state_ep','state_ew','tec','rec','lec','cel_total','ack_total','rx_frames_total','tx_attempts_total','rx_overrun_total','busoff_total','fifo0_fill','fifo1_fill','tec_max','rec_max','cel_rate_max','fifo_fill_max'];
+const canHistory = new Map();
+let canHistoryCatalog;
 const pnxStatusNames = ['ok','error','not_configured','invalid_arg','busy','not_initialized','not_connected','empty','too_large','invalid_context'];
 function diagnosticVariables(target) {
   if (target === 'status') {
@@ -35,6 +37,42 @@ function canFindings(values, target) {
   if (!messages.length) messages.push('这些指标未指向明确故障；可结合状态字段、应用层回调与时间变化继续检查。');
   return messages;
 }
+function canRates(rows, target, elapsedMs) {
+  const sample = rows.find(item => /can_diag_sample_count$/.test(item.name));
+  const count = sample?.value == null ? null : Number(sample.value);
+  const pick = field => {
+    const row = rows.find(item => item.name.endsWith(`.${field}`));
+    return row?.value == null ? null : Number(row.value);
+  };
+  if (!Number.isSafeInteger(count)) return null;
+  const now = { count, time: elapsedMs, rx: pick('rx_frames_total'), tx: pick('tx_attempts_total'), cel: pick('cel_total') };
+  const history = canHistory.get(target) || { previous: null, intervals: [] };
+  const previous = history.previous;
+  if (!previous || count <= previous.count || now.time <= previous.time) history.intervals = [];
+  else {
+    const seconds = (now.time - previous.time) / 1000;
+    const delta = field => Number.isSafeInteger(now[field]) && Number.isSafeInteger(previous[field]) && now[field] >= previous[field]
+      ? now[field] - previous[field] : null;
+    const interval = { seconds, rx: delta('rx'), tx: delta('tx'), cel: delta('cel') };
+    if (Object.values(interval).every(value => value !== null)) {
+      history.intervals.push(interval);
+      if (history.intervals.length > 60) history.intervals.shift();
+    } else history.intervals = [];
+  }
+  const groups = {
+    ahrs: /(?:^|\.)(?:ahrs_debug_telemetry|dmimu_debug_telemetry|demo_debug_instance\.imu_unit)(?:\.|$)/,
+    remoter: /(?:^|\.)demo_debug_instance\.remoter_unit(?:\.|$)/,
+    motor: /(?:^|\.)demo_debug_instance\.motor_unit(?:\.|$)/,
+    referee: /(?:^|\.)demo_debug_instance\.referee_ui(?:\.|$)/,
+  };
+  if (groups[target]) return state.variables.filter(variable => groups[target].test(variable.name)).slice(0, 40);
+  history.previous = now;
+  canHistory.set(target, history);
+  if (!history.intervals.length) return null;
+  const seconds = history.intervals.reduce((sum, item) => sum + item.seconds, 0);
+  const sum = field => history.intervals.reduce((total, item) => total + item[field], 0);
+  return { rx: sum('rx') / seconds, tx: sum('tx') / seconds, cel: sum('cel') / seconds, intervals: history.intervals.length };
+}
 function statusFindings(values) {
   const failures = values.filter(item => /\btypes::status\b/.test(item.type) && Number(item.value) > 0);
   if (failures.length) return failures.slice(0, 8).map(item => {
@@ -43,15 +81,25 @@ function statusFindings(values) {
   });
   return ['未发现非零的 types::status 全局字段；局部函数返回值不在此快照中。'];
 }
+function unitFindings(values) {
+  const named = suffix => values.find(item => item.name.endsWith(`.${suffix}`));
+  const failures = named('failure_mask');
+  if (failures && Number(failures.value) !== 0) return [`诊断固件报告 failure_mask=${failures.value}；查看测试步骤和失败计数。`];
+  const online = named('online') || named('referee_online');
+  if (online && Number(online.value) === 0) return ['当前快照报告离线；结合接收计数和目标时间判断持续时间。'];
+  return ['已读取可用字段；多字段 SWD 读取不是原子快照，单次结果不能证明持续健康。'];
+}
 async function captureDiagnosticSnapshot() {
   if (!state.projectRoot) throw new Error('PnX 诊断插件未启用');
+  if (canHistoryCatalog !== state.variables) { canHistory.clear(); canHistoryCatalog = state.variables; }
   const target = $('diagnosticTarget').value;
   const variables = diagnosticVariables(target);
   const findings = $('diagnosticFindings'), details = $('diagnosticValues');
   findings.replaceChildren(); details.replaceChildren();
   if (!variables.length) {
     $('diagnosticSummary').textContent = target === 'status' ? 'ELF 中没有可直接读取的状态全局标量。'
-      : 'ELF 中没有 can_diag_bus 字段；请确认固件启用了 CAN 诊断并包含 DWARF 信息。';
+      : target.startsWith('can') ? 'ELF 中没有 can_diag_bus 字段；请确认固件启用了 CAN 诊断并包含 DWARF 信息。'
+      : '当前 ELF 中没有该组可读取的诊断字段；主动测试字段仅存在于诊断固件。';
     return;
   }
   $('diagnosticSnapshot').disabled = true;
@@ -59,8 +107,11 @@ async function captureDiagnosticSnapshot() {
     const result = await api('/api/debug/snapshot', { ids: variables.map(variable => variable.id) });
     const read = new Map(result.values.map(item => [item.id, item.value]));
     const rows = variables.map(variable => ({ name: variable.name, type: variable.type, value: read.get(variable.id) ?? null }));
-    $('diagnosticSummary').textContent = `${target === 'status' ? '状态字段' : `CAN${Number(target.slice(3)) + 1}`} · ${rows.length} 项 · ${new Date().toLocaleTimeString()}`;
-    findings.replaceChildren(...(target === 'status' ? statusFindings(rows) : canFindings(rows, target)).map(message => {
+    const rates = target.startsWith('can') ? canRates(rows, target, performance.now()) : null;
+    const rateText = rates ? ` · 最近 ${rates.intervals} 次主机间隔平均 ${rates.rx.toFixed(1)} 收帧/s、${rates.tx.toFixed(1)} 发帧/s、${rates.cel.toFixed(1)} 错误/s` : '';
+    const targetLabel = target === 'status' ? '状态字段' : target.startsWith('can') ? `CAN${Number(target.slice(3)) + 1}` : target.toUpperCase();
+    $('diagnosticSummary').textContent = `${targetLabel} · ${rows.length} 项 · ${new Date().toLocaleTimeString()}${rateText}`;
+    findings.replaceChildren(...(target === 'status' ? statusFindings(rows) : target.startsWith('can') ? canFindings(rows, target) : unitFindings(rows)).map(message => {
       const item = document.createElement('p'); item.textContent = message; return item;
     }));
     details.replaceChildren(...rows.map(row => {
