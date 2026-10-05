@@ -820,8 +820,10 @@ try {
       afterMove,cssWidth,active,windowWidth:innerWidth,view:document.body.dataset.view,
       gridColumns:getComputedStyle(document.getElementById('desktopShell')).gridTemplateColumns};
   })()`);
-  assert.ok(sidebarResize.width>=sidebarDrag.before+60,
-    `Resize did not move: before=${sidebarDrag.before}, result=${JSON.stringify(sidebarResize)}`);
+  // Resize starts from the configured 240 px, even if the hosted renderer
+  // still reports the previous grid width when the handle is located.
+  assert.equal(sidebarResize.width, 240 + 70,
+    `Resize must add 70 px to the configured 240 px: ${JSON.stringify(sidebarResize)}`);
 
   const debugInspector = await evaluate(`(async () => {
     const previousFetch = window.fetch;
