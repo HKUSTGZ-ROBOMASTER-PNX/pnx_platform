@@ -557,7 +557,11 @@ try {
   const curveHover = await evaluate(`(async () => {
     const card = document.querySelector('.plot-card[data-plot-id="${curveConfigDraft.plotId}"]');
     card.scrollIntoView({block:'center',inline:'nearest'});
-    scheduleDraw(true); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    scheduleDraw(true);
+    const drawDeadline=performance.now()+2000;
+    while (!card.plotGeometry && performance.now()<drawDeadline)
+      await new Promise(resolve=>setTimeout(resolve,20));
+    if (!card.plotGeometry) throw new Error('Hover test plot did not finish drawing its sample data');
     const canvas=card.querySelector('canvas'),rect=canvas.getBoundingClientRect();
     canvas.dispatchEvent(new PointerEvent('pointermove',{clientX:rect.left+rect.width*.62,clientY:rect.top+rect.height*.42,bubbles:true}));
     return {visible:!card.querySelector('.plot-tooltip').classList.contains('hidden'),text:card.querySelector('.plot-tooltip').textContent,
