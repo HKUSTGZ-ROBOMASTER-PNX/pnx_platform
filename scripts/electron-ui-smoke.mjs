@@ -797,12 +797,15 @@ try {
   // Chromium's grid track layout stale on hosted Windows desktops.
   const sidebarDrag = await evaluate(`(async () => {
     setView('scope'); setScopeSidebarWidth(240);
-    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const layoutDeadline=performance.now()+2000;
+    while (document.getElementById('scopeSidebar').getBoundingClientRect().width!==240 && performance.now()<layoutDeadline)
+      await new Promise(resolve=>setTimeout(resolve,20));
     const handle = document.getElementById('scopeResize').getBoundingClientRect();
     const x=handle.left+handle.width/2, y=handle.top+handle.height/2;
     return {x,y,before:document.getElementById('scopeSidebar').getBoundingClientRect().width,
       hit:document.elementFromPoint(x,y)?.id,limit:Math.min(640,window.innerWidth-350)};
   })()`);
+  assert.equal(sidebarDrag.before,240,'Sidebar must finish applying the configured initial width');
   assert.equal(sidebarDrag.hit,'scopeResize',`Resize handle must be visible: ${JSON.stringify(sidebarDrag)}`);
   assert.ok(sidebarDrag.limit>=sidebarDrag.before+70,'Viewport must allow a 70 px resize');
   // The hit test above checks the visible handle; renderer pointer events
@@ -815,7 +818,9 @@ try {
     const afterMove=document.getElementById('scopeSidebar').getBoundingClientRect().width;
     const cssWidth=document.getElementById('desktopShell').style.getPropertyValue('--scope-sidebar-width');
     window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,clientX:${sidebarDrag.x + 70},clientY:${sidebarDrag.y}}));
-    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const layoutDeadline=performance.now()+2000;
+    while (document.getElementById('scopeSidebar').getBoundingClientRect().width!==310 && performance.now()<layoutDeadline)
+      await new Promise(resolve=>setTimeout(resolve,20));
     return {width:document.getElementById('scopeSidebar').getBoundingClientRect().width,
       afterMove,cssWidth,active,windowWidth:innerWidth,view:document.body.dataset.view,
       gridColumns:getComputedStyle(document.getElementById('desktopShell')).gridTemplateColumns};
@@ -945,7 +950,10 @@ try {
   assert.deepEqual(flashEvents,{reads:0,paused:false});
   const allPause = await evaluate(`(async () => {
     await connect(true,false); state.selected=state.variables.slice(0,2).map(v=>v.id); await applySampling();
-    await new Promise(resolve=>setTimeout(resolve,200));
+    const firstSampleDeadline=performance.now()+2000;
+    while (state.sampleCount===0 && performance.now()<firstSampleDeadline)
+      await new Promise(resolve=>setTimeout(resolve,20));
+    if (state.sampleCount===0) throw new Error('Pause test did not receive its initial sample batch');
     // Include a hidden group and a plot that was paused individually earlier.
     plotView(state.plots[0].id).paused=true;
     document.getElementById('pauseAllPlots').click();
@@ -953,7 +961,9 @@ try {
     const aligned=state.plots.every(p=>plotView(p.id).paused && plotView(p.id).anchorNs===time);
     const frozen=plotView(state.plots[0].id).snapshot;
     const count=[...frozen.series.values()].reduce((n,a)=>n+a.length,0);
-    await new Promise(resolve=>setTimeout(resolve,200));
+    const nextSampleDeadline=performance.now()+2000;
+    while (state.sampleCount<=samples && performance.now()<nextSampleDeadline)
+      await new Promise(resolve=>setTimeout(resolve,20));
     const unchanged=[...frozen.series.values()].reduce((n,a)=>n+a.length,0)===count;
     const sampling=state.sampleCount>samples;
     state.activePlotGroup=state.plotGroups.at(-1).id; renderPlots();
