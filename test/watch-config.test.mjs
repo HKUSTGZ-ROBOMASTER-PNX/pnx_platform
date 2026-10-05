@@ -7,6 +7,13 @@ import { Workspace } from '../src/workspace.mjs';
 import { loadWatchConfig, saveWatchConfig, validateWatchConfig } from '../src/watch-config.mjs';
 
 const config = () => ({format:'pnx-watch',version:1,groups:[{id:'imu',name:'IMU'}],plots:[{id:'plot-1',name:'角度',groupId:'imu',seconds:5}],variables:[{expression:'robot.yaw',plotId:'plot-1'},{expression:'gain',plotId:'watch-only'}],activeGroup:'imu',columns:2,seconds:10,rate:1000});
+test('capture configuration survives saving and rejects invalid options', () => {
+  const input = {...config(),capture:{excluded:['gain'],sampleExcluded:['robot.yaw'],timeColumn:'sample_index'}};
+  assert.deepEqual(validateWatchConfig(input),input);
+  assert.throws(() => validateWatchConfig({...input,capture:{excluded:[12],timeColumn:'sample_index'}}));
+  assert.throws(() => validateWatchConfig({...input,capture:{excluded:[],timeColumn:'invalid'}}));
+  assert.throws(() => validateWatchConfig({...input,capture:{excluded:[],sampleExcluded:[null],timeColumn:'sample_index'}}));
+});
 test('watch files round-trip per workspace without addresses and preserve watch-only assignments', () => {
   const root=mkdtempSync(path.join(os.tmpdir(),'pnx-watch-'));
   try {

@@ -208,6 +208,7 @@ body[data-view="editor"] #codeArea,body[data-view="scope"] #scopeArea,body[data-
 .selected-variable-actions button{border:0;background:transparent;padding:1px 5px;font-size:14px;line-height:1.2;color:var(--pnx-muted)}
 .selected-variable-actions button:hover{color:var(--pnx-text);background:var(--pnx-raised)}
 .record-actions{display:flex;gap:4px}
+.capture-properties .scope-property-general{grid-template-columns:1fr 1fr}.capture-property-row{display:flex;align-items:center;gap:10px;padding:8px 12px;overflow-wrap:anywhere;border-bottom:1px solid var(--pnx-border);font-size:12px}.capture-property-row input{flex:none}.capture-properties select{width:100%}
 .record-actions button{flex:1;min-width:0;padding:6px 3px;font-size:10px}
 #recordStatus{display:block;max-height:44px;overflow:auto;overflow-wrap:anywhere;line-height:1.35}
 
@@ -374,3 +375,5 @@ html[data-theme="light"] #explorer :is(h2,.folder-root,#folderRoot){color:#46505
 /* Build uses the same quiet icon surface as the adjacent debug tools. */
 html[data-theme="light"] .editor-actions .editor-icon-button.primary{background:transparent;color:#365bb5}
 html[data-theme="light"] .editor-actions .editor-icon-button.primary:hover:not(:disabled){background:#dfe8fa;color:#25458b}
+
+.logger-table{grid-column:1/-1;width:100%;border-collapse:collapse;text-align:left}.logger-table th,.logger-table td{padding:4px 8px;border-bottom:1px solid var(--pnx-border)}.logger-table th{color:var(--pnx-muted);font-weight:500}

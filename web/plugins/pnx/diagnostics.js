@@ -43,9 +43,40 @@ function statusFindings(values) {
   });
   return ['未发现非零的 types::status 全局字段；局部函数返回值不在此快照中。'];
 }
+async function captureLoggerSnapshot() {
+  const result = await api('/api/logger');
+  $('diagnosticSummary').textContent = `日志 · 启动 ${result.bootCount} · ${result.records.length}/${result.capacity} 条 · ${new Date().toLocaleTimeString()}`;
+  const note = document.createElement('p');
+  note.textContent = '最新记录在前；tick 为 ThreadX ticks。读取不暂停或修改目标；RAM 日志不保证断电保存。';
+  $('diagnosticFindings').replaceChildren(note);
+  const table = document.createElement('table');
+  table.className = 'logger-table';
+  const head = table.createTHead().insertRow();
+  for (const name of ['序号', 'tick', '等级', '状态', '数值', '消息']) {
+    const cell = document.createElement('th'); cell.textContent = name; head.append(cell);
+  }
+  const body = table.createTBody();
+  for (const record of result.records) {
+    const row = body.insertRow();
+    for (const key of ['sequence', 'tick', 'severity', 'status', 'value', 'message']) {
+      row.insertCell().textContent = String(record[key]);
+    }
+  }
+  $('diagnosticValues').replaceChildren(table);
+  if (!result.records.length) note.textContent += ' 当前无记录。';
+}
+
 async function captureDiagnosticSnapshot() {
-  if (!state.projectRoot) throw new Error('PnX 诊断插件未启用');
   const target = $('diagnosticTarget').value;
+  if (target === 'logger') {
+    $('diagnosticFindings').replaceChildren(); $('diagnosticValues').replaceChildren();
+    $('diagnosticSnapshot').disabled = true;
+    try { await captureLoggerSnapshot(); }
+    catch (error) { $('diagnosticSummary').textContent = error.message; throw error; }
+    finally { $('diagnosticSnapshot').disabled = !state.connected; }
+    return;
+  }
+  if (!state.projectRoot) throw new Error('PnX 诊断插件未启用');
   const variables = diagnosticVariables(target);
   const findings = $('diagnosticFindings'), details = $('diagnosticValues');
   findings.replaceChildren(); details.replaceChildren();

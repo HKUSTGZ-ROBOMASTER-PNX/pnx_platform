@@ -35,13 +35,16 @@ await new Promise(resolve => portServer.close(resolve));
 
 const child = spawn(path.resolve(executable), [`--remote-debugging-port=${port}`], {
   cwd: root, windowsHide: true, stdio: 'ignore',
-  env: { ...process.env, PNX_ELECTRON_TEST_MODE: '1', PNX_ELECTRON_AUTOCLOSE_MS: '30000',
+  env: { ...process.env, PNX_ELECTRON_TEST_MODE: '1', PNX_ELECTRON_AUTOCLOSE_MS: '0',
     PNX_WORKSPACE_ROOT: realProbe ? process.env.PNX_UI_PROJECT_ROOT : pnxFixture,
     ...(mockBanked ? { PNX_TEST_BANK_SIZE: '2' } : {}),
     PNX_DESKTOP_DATA_ROOT: path.join(root, '.cache', `ui-smoke-${process.pid}`),
     PNX_CAPTURE_ROOT: path.join(root, '.cache', `ui-captures-${process.pid}`) },
 });
 let ws, evaluate, closedByTest = false;
+// The full interaction suite outlives the desktop's 30-second launch check.
+// Bound the runner instead, so closing the window cannot silently abandon CDP.
+const suiteTimeout = setTimeout(() => child.kill(), 120000);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 try {
   let target;
@@ -65,6 +68,10 @@ try {
     const { resolve, reject } = pending.get(message.id);
     pending.delete(message.id);
     message.error ? reject(new Error(message.error.message)) : resolve(message.result);
+  });
+  ws.addEventListener('close', () => {
+    for (const { reject } of pending.values()) reject(new Error('Electron closed before the UI smoke completed'));
+    pending.clear();
   });
   const call = (method, params = {}) => new Promise((resolve, reject) => {
     const id = nextId++;
@@ -649,7 +656,7 @@ try {
     return { started, stopped: !state.recording, exportEnabled: !document.getElementById('exportCsv').disabled,
       status: response.status, rows: content.trim().split('\\n').length - 1, header: content.split('\\n')[0], file: state.recordFile };
   })()`);
-  if (csv) { assert.equal(csv.started && csv.stopped && csv.exportEnabled && csv.status === 200, true); assert.ok(csv.rows > 100); assert.match(csv.header, /timestamp_ns/); assert.match(csv.file, /ui-captures/); }
+  if (csv) { assert.equal(csv.started && csv.stopped && csv.exportEnabled && csv.status === 200, true); assert.ok(csv.rows > 100); assert.match(csv.header, /^"sample_index",/); assert.match(csv.file, /ui-captures/); }
   const screenshotPath = path.join(root, '.cache', 'electron-ui-smoke.png');
   const screenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(screenshotPath, Buffer.from(screenshot.data, 'base64'));
@@ -1006,6 +1013,7 @@ try {
   await evaluate('setTimeout(() => window.close(), 50); true');
   closedByTest = true;
 } finally {
+  clearTimeout(suiteTimeout);
   if (!closedByTest && evaluate && ws?.readyState === WebSocket.OPEN) {
     try { await Promise.race([evaluate('disconnect().catch(() => {})'), pause(2500)]); } catch { /* Best effort. */ }
     try { await Promise.race([evaluate('setTimeout(() => window.close(), 50); true'), pause(2500)]); } catch { /* Best effort. */ }

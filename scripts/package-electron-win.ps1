@@ -1,9 +1,15 @@
-param([string]$ElectronVersion = '38.8.6', [string]$OutputName = 'PnX-Platform-electron-win32-x64')
+param([string]$ElectronVersion = '38.8.6', [string]$OutputName = 'PnX-Platform-electron-win32-x64', [string]$ElectronArchive)
 $ErrorActionPreference = 'Stop'
 $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 & (Join-Path $PSScriptRoot 'build-native-win.ps1')
 if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Native backend build failed' }
-$zip = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'electron\Cache') -Filter "electron-v$ElectronVersion-win32-x64.zip" -File -Recurse | Select-Object -First 1
+$zip = if ($ElectronArchive) {
+  $archive = Get-Item -LiteralPath $ElectronArchive -ErrorAction Stop
+  if ($archive.PSIsContainer -or $archive.Name -ne "electron-v$ElectronVersion-win32-x64.zip") { throw 'Electron archive does not match the requested version and platform.' }
+  $archive
+} else {
+  Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'electron\Cache') -Filter "electron-v$ElectronVersion-win32-x64.zip" -File -Recurse | Select-Object -First 1
+}
 if (-not $zip) { throw "Electron $ElectronVersion Windows x64 runtime is missing from the local cache." }
 $distDir = [System.IO.Path]::GetFullPath((Join-Path $sourceRoot 'dist'))
 $outDir = [System.IO.Path]::GetFullPath((Join-Path $distDir $OutputName))

@@ -7,7 +7,7 @@ use std::{
 use pnx_core::{MemoryClass, ReadRequest, ScalarKind, TargetState, plan_reads};
 use probe_rs::{
     CoreStatus, HaltReason, MemoryInterface, Session,
-    flashing::{BinOptions, DownloadOptions, Format, download_file_with_options},
+    flashing::{BinOptions, DownloadOptions, FlashError, FlashProgress, Format, build_loader},
     probe::{WireProtocol, list::Lister},
 };
 use probe_rs_debug::DebugRegisters;
@@ -407,8 +407,15 @@ impl Backend for ProbeRsBackend {
         };
         let mut options = DownloadOptions::default();
         options.verify = verify;
-        download_file_with_options(session, path, format, options)
-            .map_err(|error| error.to_string())?;
+        let loader = build_loader(session, path, format, None).map_err(|error| error.to_string())?;
+        // Compare the actual target contents, never an ELF hash cached on the host.
+        // An identical image needs no erase/write cycle. Only a data mismatch
+        // permits programming; transport or target errors must abort.
+        match loader.verify(session, &mut FlashProgress::empty()) {
+            Ok(()) => {}
+            Err(FlashError::Verify) => loader.commit(session, options).map_err(|error| error.to_string())?,
+            Err(error) => return Err(error.to_string()),
+        }
         if reset_after {
             let mut core = session.core(0).map_err(|error| error.to_string())?;
             // Programming must not inherit breakpoint comparators from an old

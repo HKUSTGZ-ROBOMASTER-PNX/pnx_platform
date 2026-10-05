@@ -84,6 +84,14 @@ test('standalone workbench loads board resources and streams mock samples', { ti
     const active = await get('/api/catalog');
     assert.equal(active.connected, true);
     assert.deepEqual(active.selected, ['mock.ramp']);
+    const invalidRecording = await fetch(`${origin}/api/record/start`, {method:'POST',headers:{'X-PnX-Token':token,'Content-Type':'application/json'},body:JSON.stringify({ids:['missing']})});
+    assert.equal(invalidRecording.status,400);
+    await post('/api/record/start',{ids:['mock.ramp'],timeColumn:'sample_index'});
+    await new Promise(resolve => setTimeout(resolve,150));
+    const recorded = await post('/api/record/stop',{});
+    assert.ok(recorded.rows > 0);
+    const csv = await (await fetch(`${origin}/api/record/csv`,{headers:{'X-PnX-Token':token}})).text();
+    assert.match(csv,/^"sample_index",[^\n]+\n1,/);
     reader.cancel();
     await post('/api/disconnect', {});
   } finally {

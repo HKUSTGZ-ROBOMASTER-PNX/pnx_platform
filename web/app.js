@@ -2,6 +2,8 @@ const $ = id => document.getElementById(id);
 const token = window.PNX_TOKEN;
 const colors = ['#5ee1a8','#ffbd69','#6db6ff','#ff7397','#bb9aff','#f0e07b','#6de1e9','#f890e7'];
 const BANK_CHANNELS = 256;
+const captureConfig = { excluded: new Set(), sampleExcluded: new Set(), timeColumn: 'sample_index' };
+const captureIds = () => state.activeIds.filter(id => !captureConfig.excluded.has(state.variableById.get(id)?.name || id));
 const PLOT_PAGE_SIZE = 64;
 const state = { board: 'h723_mc02', preset: 'h723-debug', config: {}, hardware: {}, variables: [], selected: [], activeIds: [], activeIndex: new Map(), points: [], latest: [], series: new Map(), latestById: new Map(), latestAtById: new Map(), firstTimestampNs: null, lastTimestampNs: 0, banks: 1, bankSize: BANK_CHANNELS, bankDwellMs: 0, streamEpoch: null, sampleCount: 0, droppedFrames: 0, rateWindow: [], lastSampleAt: 0, connected: false, flashAccess: false,
   projectProfile: null, debugAccess: false, debugPaused: false, debugReason: '', stoppedAt: null, breakpoints: new Map(), breakpointResults: new Map(), workspace: null, projectRoot: null, file: null, files: new Map(), variableById: new Map(), variableTree: [], variableNodes: new Map(), variableLeafIds: new Map(), expandedVariables: new Set(), matchingVariableIds: [], plotGroups: [{ id: 'default', name: '默认组' }], activePlotGroup: 'default', plots: [{ id: 'plot-1', name: '曲线 1' }], plotAssignments: new Map(), variableColors: new Map(), plotPages: new Map(), plotViews: new Map(), view: 'editor',
@@ -1040,6 +1042,54 @@ function openOscilloscopeSettings(plot) {
   actions.append(cancel, save);
   dialog.append(title,hint,general,table,actions); dialog.onclose = () => dialog.remove(); document.body.append(dialog); dialog.showModal(); name.focus(); name.select();
 }
+function openCaptureSettings() {
+  if (state.recording) return;
+  const dialog = document.createElement('dialog'); dialog.className = 'scope-properties capture-properties';
+  const title = document.createElement('h2'); title.textContent = '采集与导出配置';
+  const hint = document.createElement('p'); hint.textContent = '从左侧添加变量，在此分别选择采样变量和 CSV 导出列。采样率与曲线共用；记录保留完整采样，曲线暂停不影响记录。配置会随变量查看配置保存。';
+  const general = document.createElement('div'); general.className = 'scope-property-general';
+  const rateLabel = document.createElement('label'); rateLabel.textContent = '请求采样率（S/s）';
+  const rate = document.createElement('input'); rate.type = 'number'; rate.min = '1'; rate.max = '100000'; rate.step = '1'; rate.value = $('scopeRate').value; rateLabel.append(rate);
+  const timeLabel = document.createElement('label'); timeLabel.textContent = 'CSV 首列';
+  const time = document.createElement('select'); time.append(new Option('采样序号（从 1 开始）', 'sample_index'), new Option('相对时间（秒，从 0 开始）', 'elapsed_s'), new Option('原始时间（纳秒）', 'timestamp_ns')); time.value = captureConfig.timeColumn; timeLabel.append(time);
+  general.append(rateLabel, timeLabel);
+  const table = document.createElement('div'); table.className = 'scope-property-variables';
+  const choices = state.selected.map(id => {
+    const variable = state.variableById.get(id), name = variable?.name || id;
+    const row = document.createElement('div'); row.className = 'capture-property-row';
+    const box = document.createElement('input'); box.type = 'checkbox'; box.checked = !captureConfig.excluded.has(name); box.disabled = variable?.unavailable === true;
+    const sampled = document.createElement('input'); sampled.type = 'checkbox'; sampled.checked = !captureConfig.sampleExcluded.has(name); sampled.disabled = variable?.unavailable === true; sampled.setAttribute('aria-label', `采样 ${name}`); box.setAttribute('aria-label', `导出 ${name}`);
+    row.append(sampled, document.createTextNode('采样'), box, document.createTextNode('CSV'), document.createTextNode(name + (box.disabled ? '（当前 ELF 不可用）' : ''))); table.append(row);
+    return { name, box, sampled };
+  });
+  const toolbar = document.createElement('div'); toolbar.className = 'row';
+  for (const [label, checked] of [['全选', true], ['全不选', false]]) {
+    const button = document.createElement('button'); button.textContent = label; button.onclick = () => choices.forEach(choice => { if (!choice.box.disabled) choice.box.checked = choice.sampled.checked = checked; }); toolbar.append(button);
+  }
+  const error = document.createElement('p'); error.setAttribute('role', 'alert');
+  const actions = document.createElement('div'); actions.className = 'scope-property-actions';
+  const cancel = document.createElement('button'); cancel.textContent = '取消'; cancel.onclick = () => dialog.close();
+  const save = document.createElement('button'); save.textContent = '应用配置'; save.className = 'primary'; save.onclick = () => {
+    if (!Number.isInteger(Number(rate.value)) || Number(rate.value) < 1 || Number(rate.value) > 100000) { error.textContent = '采样率须为 1–100000 的整数'; return; }
+    let samplingChanged = false;
+    for (const choice of choices) {
+      if (choice.box.checked) captureConfig.excluded.delete(choice.name); else captureConfig.excluded.add(choice.name);
+      if (captureConfig.sampleExcluded.has(choice.name) === choice.sampled.checked) samplingChanged = true;
+      if (choice.sampled.checked) captureConfig.sampleExcluded.delete(choice.name); else captureConfig.sampleExcluded.add(choice.name);
+    }
+    captureConfig.timeColumn = time.value;
+    const changed = $('scopeRate').value !== rate.value;
+    $('scopeRate').value = $('rate').value = rate.value;
+    if ((changed || samplingChanged) && state.connected) {
+      clearTimeout(autoSampleTimer);
+      samplingUpdate = samplingUpdate.catch(() => {}).then(() => applySampling());
+      void perform(() => samplingUpdate);
+    }
+    updateRecordUi(); dialog.close();
+  };
+  actions.append(cancel, save); dialog.append(title, hint, general, toolbar, table, error, actions);
+  dialog.onclose = () => dialog.remove(); document.body.append(dialog); dialog.showModal();
+}
 function plotGroupLabel(plot) { return `${state.plotGroups.find(group => group.id === (plot.groupId || 'default'))?.name || '默认组'} / ${plot.name}`; }
 function renderPlotGroups() {
   $('plotGroups').replaceChildren(...state.plotGroups.map(group => {
@@ -1161,7 +1211,8 @@ function updateLive() {
   }
 }
 function updateRecordUi() {
-  $('recordStart').disabled = !state.connected || !state.activeIds.length || state.recording;
+  $('recordStart').disabled = !state.connected || !captureIds().length || state.recording;
+  $('configureCapture').disabled = state.recording;
   $('recordStop').disabled = !state.recording;
   $('exportCsv').disabled = !state.recordFile || state.recording;
   $('recordStatus').textContent = state.recording ? '正在记录完整采样…'
@@ -1246,7 +1297,9 @@ function updateDebugButtons() {
   $('quickDebug').title = buildBeforeConnect() ? '保存、编译并连接调试器' : '使用配置的 ELF 连接调试器';
   $('quickFlash').title = buildBeforeConnect() ? '确认后编译并烧录' : '确认后烧录配置的 ELF';
   $('attach').disabled = $('connectFlash').disabled = $('scopeAttach').disabled = $('scopeWriteConnect').disabled = !hasTarget;
-  for (const element of document.querySelectorAll('.debug-diagnostic-row,#diagnosticFindings,#diagnosticValues')) element.classList.toggle('hidden', !state.projectRoot);
+  for (const option of $('diagnosticTarget').options) option.disabled = option.value !== 'logger' && !state.projectRoot;
+  if ($('diagnosticTarget').selectedOptions[0]?.disabled) $('diagnosticTarget').value = 'logger';
+  for (const element of document.querySelectorAll('.debug-diagnostic-row,#diagnosticFindings,#diagnosticValues')) element.classList.toggle('hidden', !hasTarget && !state.projectRoot);
   const target = state.projectProfile?.target;
   $('scopeTargetSummary').textContent = target?.chip && target?.elf
     ? `${target.chip} · ${target.elf}`
@@ -1256,11 +1309,14 @@ function updateDebugButtons() {
 }
 function captureWatchConfig() {
   return {format:'pnx-watch',version:1,
+    capture: { excluded: [...captureConfig.excluded], sampleExcluded: [...captureConfig.sampleExcluded], timeColumn: captureConfig.timeColumn },
     variables:state.selected.map(id => ({expression:state.variableById.get(id)?.name,plotId:state.plotAssignments.get(id) || 'watch-only',...(state.variableColors.has(id)?{color:state.variableColors.get(id)}:{})})).filter(v=>v.expression),
     groups:state.plotGroups.map(g=>({...g})), plots:state.plots.map(p=>({...p,groupId:p.groupId || 'default',seconds:plotView(p.id).seconds})),
     activeGroup:state.activePlotGroup,columns:Number($('plotColumns').value),seconds:timeWindowSeconds($('plotTimeWindow').value),rate:Number($('scopeRate').value) || 1000};
 }
 function restoreWatchConfig(config) {
+  captureConfig.excluded = new Set(config.capture?.excluded || []); captureConfig.timeColumn = config.capture?.timeColumn || 'sample_index';
+  captureConfig.sampleExcluded = new Set(config.capture?.sampleExcluded || []);
   state.plotGroups=config.groups.map(g=>({...g})); state.plots=config.plots.map(p=>({...p})); state.activePlotGroup=config.activeGroup;
   $('plotColumns').value=String(config.columns); $('plotTimeWindow').value=String(config.seconds); $('scopeRate').value=$('rate').value=String(config.rate);
   state.plotViews.clear(); for(const p of config.plots) plotView(p.id).seconds=p.seconds;
@@ -1298,7 +1354,7 @@ async function connect(mock, allowFlash, allowDebug = false, switchView = true) 
   const rate = Number(state.view === 'scope' ? $('scopeRate').value : $('rate').value) || 1000;
   $('rate').value = String(rate); $('scopeRate').value = String(rate);
   let result;
-  try { result = await api('/api/connect', { mock, allowFlash, allowDebug, preset: state.preset, probe: $('probe').value.trim(), speedKHz: Number($('speed').value), rate }); }
+  try { result = await api('/api/connect', { mock, allowFlash, allowDebug, preset: state.preset, probe: $('probe').value.trim(), speedKHz: Number($(allowFlash ? 'flashSpeed' : 'speed').value), rate }); }
   catch (error) { resetConnectionUI(); throw error; }
   if (result.probe && result.probe !== $('probe').value.trim()) {
     $('probe').value = result.probe;
@@ -1776,6 +1832,7 @@ async function disconnect() {
   resetConnectionUI();
 }
 function resetConnectionUI(preserveWatch = true) {
+  if (!preserveWatch) { captureConfig.excluded.clear(); captureConfig.sampleExcluded.clear(); captureConfig.timeColumn = 'sample_index'; }
   if ($('writeDialog').open) $('writeDialog').close();
   variableToWrite = undefined;
   if (!preserveWatch) { state.selected=[]; setVariableCatalog([],[]); state.expandedVariables.clear(); state.plotAssignments.clear(); state.variableColors.clear(); state.plotGroups=[{id:'default',name:'默认组'}]; state.activePlotGroup='default'; state.plots=[{id:'plot-1',name:'曲线 1',groupId:'default'}]; }
@@ -1808,7 +1865,7 @@ function scheduleAutoSampling() {
 async function applySampling() {
   if (state.recording) applyRecordStatus(await api('/api/record/stop', {}));
   const rate = Number($('scopeRate').value) || 1000; $('rate').value = String(rate);
-  const result = await api('/api/subscribe', { ids: state.selected.filter(id=>!state.variableById.get(id)?.unavailable), rate });
+  const result = await api('/api/subscribe', { ids: state.selected.filter(id=>!state.variableById.get(id)?.unavailable && !captureConfig.sampleExcluded.has(state.variableById.get(id)?.name || id)), rate });
   clearTimeout(liveTimer); liveTimer = null;
   state.activeIds = result.ids; state.activeIndex = new Map(result.ids.map((id, index) => [id, index])); state.points = []; state.latest = []; state.series.clear(); resetPlotViews(); state.latestById.clear(); state.latestAtById.clear(); state.firstTimestampNs = null; state.lastTimestampNs = 0; state.banks = result.banks; state.bankSize = result.bankSize; state.bankDwellMs = result.dwellMs; state.streamEpoch = null; state.sampleCount = 0; state.droppedFrames = 0; state.rateWindow = []; state.lastSampleAt = performance.now(); state.observedValues.clear(); state.valueChangedAt.clear(); state.valueSeenAt.clear(); updateScopeNotice();
   $('metrics').textContent = result.ids.length ? '等待实时数据' : '尚未选择变量'; displayVariables(); displaySelectedVariables(); updateRecordUi(); renderPlots();
@@ -1851,7 +1908,8 @@ $('plotTimeWindow').onchange = () => {
   savePlotLayout(); scheduleDraw(true);
 };
 $('plotGridFullscreen').onclick = () => perform(async () => { if (document.fullscreenElement === $('plotGrid')) await document.exitFullscreen(); else await $('plotGrid').requestFullscreen(); });
-$('recordStart').onclick = () => perform(async () => { applyRecordStatus(await api('/api/record/start', {})); log(`开始记录：${state.recordFile}`); });
+$('configureCapture').onclick = openCaptureSettings;
+$('recordStart').onclick = () => perform(async () => { clearTimeout(autoSampleTimer); samplingUpdate = samplingUpdate.catch(() => {}).then(() => applySampling()); await samplingUpdate; applyRecordStatus(await api('/api/record/start', { ids: captureIds(), timeColumn: captureConfig.timeColumn })); log(`开始记录：${state.recordFile}`); });
 $('recordStop').onclick = () => perform(async () => { applyRecordStatus(await api('/api/record/stop', {})); log(`CSV 已保存：${state.recordFile}（${state.recordRows} 行）`); });
 $('exportCsv').onclick = () => { if (!state.recordFile) return; const link = document.createElement('a'); link.href = `/api/record/csv?token=${encodeURIComponent(token)}`; link.download = state.recordFile.split(/[\\/]/).at(-1); document.body.append(link); link.click(); link.remove(); };
 $('plotColumns').onchange = () => { renderPlots(); savePlotLayout(); };

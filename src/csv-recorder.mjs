@@ -7,7 +7,9 @@ const MAX_PENDING_BYTES = 16 * 1024 * 1024;
 const csvCell = value => `"${String(value).replaceAll('"', '""')}"`;
 
 export class CsvRecorder {
-  static async start(root, variables) {
+  static async start(root, variables, options = {}) {
+    const timeColumn = options.timeColumn ?? 'sample_index';
+    if (!['sample_index', 'elapsed_s', 'timestamp_ns'].includes(timeColumn)) throw new Error('Invalid CSV time column');
     if (!root || !variables.length) throw new Error('Open a project and subscribe to variables first');
     const directory = path.join(root, 'captures');
     mkdirSync(directory, { recursive: true });
@@ -15,10 +17,12 @@ export class CsvRecorder {
     const file = path.join(directory, `pnx-${stamp}-${randomBytes(3).toString('hex')}.csv`);
     const stream = createWriteStream(file, { flags: 'wx', encoding: 'utf8' });
     await new Promise((resolve, reject) => { stream.once('open', resolve); stream.once('error', reject); });
-    return new CsvRecorder(file, variables, stream);
+    return new CsvRecorder(file, variables, stream, timeColumn);
   }
 
-  constructor(file, variables, stream) {
+  constructor(file, variables, stream, timeColumn) {
+    this.timeColumn = timeColumn;
+    this.firstTimestamp = null;
     this.file = file;
     this.variables = variables.map(variable => ({ id: variable.id, name: variable.name }));
     this.stream = stream;
@@ -27,7 +31,7 @@ export class CsvRecorder {
     this.active = true;
     this.error = null;
     this.finished = finished(stream).catch(error => { this.error = error.message; this.active = false; });
-    this.write(['timestamp_ns', ...this.variables.map(variable => variable.name)].map(csvCell).join(',') + '\n');
+    this.write([timeColumn, ...this.variables.map(variable => variable.name)].map(csvCell).join(',') + '\n');
   }
 
   write(chunk) {
@@ -51,12 +55,15 @@ export class CsvRecorder {
     let chunk = '';
     for (let sample = 0; sample < batch.sampleCount && this.active; sample++) {
       const timestamp = start + BigInt(sample) * period;
+      this.firstTimestamp ??= timestamp;
+      const left = this.timeColumn === 'timestamp_ns' ? timestamp
+        : this.timeColumn === 'elapsed_s' ? Number(timestamp - this.firstTimestamp) / 1e9 : this.rows + 1;
       const values = indices.map(index => {
         if (index === undefined) return '';
         const value = batch.values[sample * batch.channelIds.length + index];
         return Number.isFinite(value) ? String(value) : '';
       });
-      chunk += `${timestamp},${values.join(',')}\n`;
+      chunk += `${left},${values.join(',')}\n`;
       this.rows++;
       if (chunk.length > 64 * 1024) { this.write(chunk); chunk = ''; }
     }

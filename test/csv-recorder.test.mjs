@@ -17,10 +17,24 @@ test('CSV recording preserves every sample and leaves empty cells for rotated ba
   const result = await recorder.stop();
   assert.equal(result.rows, 3);
   assert.equal(readFileSync(result.file, 'utf8'), [
-    '"timestamp_ns","robot.speed","robot,torque"',
-    '9007199254740993,1.25,',
-    '9007199254741093,2.5,',
-    '9007199254741193,,-3',
+    '"sample_index","robot.speed","robot,torque"',
+    '1,1.25,',
+    '2,2.5,',
+    '3,,-3',
     '',
   ].join('\n'));
+});
+
+test('CSV records only configured channels and keeps exact relative time across batches', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pnx-csv-time-'));
+  for (const timeColumn of ['elapsed_s', 'timestamp_ns']) {
+    const recorder = await CsvRecorder.start(root, [{id:'b',name:'selected'}], {timeColumn});
+    recorder.appendBatch({channelIds:['a'],sampleCount:1,startTimestampNsExact:'1',samplePeriodNsExact:'1',values:[99]});
+    recorder.appendBatch({channelIds:['a','b'],sampleCount:2,startTimestampNsExact:'9007199254740993',samplePeriodNsExact:'1000000',values:[99,3,99,4]});
+    recorder.appendBatch({channelIds:['b'],sampleCount:1,startTimestampNsExact:'9007199256740993',samplePeriodNsExact:'1000000',values:[5]});
+    const result = await recorder.stop();
+    assert.equal(result.rows, 3);
+    assert.equal(readFileSync(result.file,'utf8'), [`"${timeColumn}","selected"`, ...(timeColumn === 'elapsed_s' ? ['0,3','0.001,4','0.002,5'] : ['9007199254740993,3','9007199255740993,4','9007199256740993,5']), ''].join('\n'));
+  }
+  await assert.rejects(CsvRecorder.start(root,[{id:'a',name:'a'}],{timeColumn:'invalid'}), /Invalid CSV/);
 });

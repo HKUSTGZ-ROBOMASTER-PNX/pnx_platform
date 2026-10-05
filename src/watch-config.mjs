@@ -25,7 +25,14 @@ export function validateWatchConfig(value) {
     return {...(v.color === undefined ? {} : {color:v.color.toLowerCase()}),expression:v.expression,plotId:v.plotId};
   });
   if (new Set(variables.map(v => v.expression)).size !== variables.length) fail();
-  return {format:'pnx-watch',version:1,groups,plots,variables,activeGroup:value.activeGroup,columns:value.columns,seconds:value.seconds,rate:value.rate};
+  let capture;
+  if (value.capture !== undefined) {
+    if (!Array.isArray(value.capture?.excluded) || value.capture.excluded.length > 100000 || value.capture.excluded.some(v => !text(v)) ||
+        !['sample_index','elapsed_s','timestamp_ns'].includes(value.capture.timeColumn)) fail();
+    if (value.capture.sampleExcluded !== undefined && (!Array.isArray(value.capture.sampleExcluded) || value.capture.sampleExcluded.length > 100000 || value.capture.sampleExcluded.some(v => !text(v)))) fail();
+    capture = {excluded:[...new Set(value.capture.excluded)],timeColumn:value.capture.timeColumn,...(value.capture.sampleExcluded ? {sampleExcluded:[...new Set(value.capture.sampleExcluded)]} : {})};
+  }
+  return {format:'pnx-watch',version:1,groups,plots,variables,activeGroup:value.activeGroup,columns:value.columns,seconds:value.seconds,rate:value.rate,...(capture ? {capture} : {})};
 }
 export function loadWatchConfig(workspace) {
   if (!workspace.root) throw new Error('请先打开工程文件夹');

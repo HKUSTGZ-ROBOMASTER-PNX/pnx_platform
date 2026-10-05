@@ -7,6 +7,7 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync, r
 import { fileURLToPath } from 'node:url';
 import { DapSession, listProbes, resolveProbeSelection } from './dap.mjs';
 import { globalScalars, globalTree, checkedWriteValue } from './global-variables.mjs';
+import { readLogger } from './logger-reader.mjs';
 import { SubscriptionBanks } from './subscription-banks.mjs';
 import { loadWatchConfig, saveWatchConfig } from './watch-config.mjs';
 import { Workspace } from './workspace.mjs';
@@ -339,7 +340,7 @@ async function connectSession(input) {
   const probe = mock ? null : resolveProbeSelection(await listProbes(), input.probe, input.allowFlash === true || input.allowDebug === true);
   if (probe?.changed) status(`Selected probe was disconnected; using ${probe.selector}`);
   const requestedSpeed = Number(input.speedKHz) || 4000;
-  const speeds = mock ? [requestedSpeed] : [...new Set([requestedSpeed, 1000, 400].filter(speed => speed <= requestedSpeed))];
+  const speeds = mock ? [requestedSpeed] : [...new Set([requestedSpeed, ...(input.allowFlash === true ? [8000, 4000] : []), 1000, 400].filter(speed => speed <= requestedSpeed))];
   let next;
   for (let attempt = 0; attempt < speeds.length; attempt++) {
     const candidate = new DapSession(
@@ -443,6 +444,16 @@ async function route(req, res) {
   if (url.pathname === '/api/config-editor/state' && req.method === 'GET') {
     json(res, 200, await configEditorState(url.searchParams.get('board'), url.searchParams.get('role') || 'params', url.searchParams.get('preset'), url.searchParams.get('refresh') === '1')); return;
   }
+  if (url.pathname === '/api/logger' && req.method === 'GET') {
+    const result = await serializeSession(async () => {
+      if (!session || session.closed || session.meta?.mock) throw new Error('Connect a real target first');
+      if (session.meta?.allowFlash) throw new Error('Inspection is disabled in a programming session');
+      if (!session.meta.elfPath || !existsSync(session.meta.elfPath) || hashFile(session.meta.elfPath) !== session.meta.elfHash)
+        throw new Error('ELF changed after connection; reconnect before reading logs');
+      return readLogger(session, catalog);
+    });
+    json(res, 200, result); return;
+  }
   if (url.pathname === '/api/catalog' && req.method === 'GET') { json(res, 200, { connected: !!session && !session.closed, variables: flatten(catalog), tree: globalTree(catalog), selected }); return; }
   if (url.pathname === '/api/workspace/list' && req.method === 'GET') { json(res, 200, { entries: workspace.list(url.searchParams.get('path') || '') }); return; }
   if (url.pathname === '/api/workspace/file' && req.method === 'GET') { json(res, 200, workspace.read(url.searchParams.get('path') || '')); return; }
@@ -504,7 +515,10 @@ async function route(req, res) {
     if (recording?.active) throw new Error('CSV recording is already active');
     if (recording) await stopRecording();
     const variables = new Map(flatten(catalog).map(variable => [variable.id, variable]));
-    recording = await CsvRecorder.start(process.env.PNX_CAPTURE_ROOT || workspace.root, selected.map(id => variables.get(id)).filter(Boolean));
+    const ids = input.ids ?? selected;
+    if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== 'string' || !selectedSet.has(id) || !variables.has(id)))
+      throw new Error('请选择已采集的变量进行记录');
+    recording = await CsvRecorder.start(process.env.PNX_CAPTURE_ROOT || workspace.root, [...new Set(ids)].map(id => variables.get(id)), { timeColumn: input.timeColumn });
     lastRecording = undefined;
     sendEvent('record', recording.status());
     json(res, 200, recording.status()); return;
